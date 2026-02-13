@@ -38,7 +38,7 @@ For trusted agents (not adversarial code), this isolation level is sufficient.
 ¦  Podman Container                   ¦
 ¦                                     ¦
 ¦  Claude Code                        ¦
-¦    +-- bash (built-in) --- ssh -----+--? 10.4.4.10:22
+¦    +-- HA API  ------REST call -----+--? 10.4.4.10:22
 ¦    +-- MCP: Playwright --- chromium +--? 10.4.4.10:8123
 ¦    +-- bash --- git/gh ------------+--? github.com
 ¦                                     ¦
@@ -52,12 +52,13 @@ Alternatives considered: VM (heavy), systemd-nspawn (no advantage), MicroVM (har
 
 ### Network Isolation
 - HTTP(S) traffic routes through a forward proxy (tinyproxy) with domain allowlist
-- SSH goes direct to target, controlled by nftables
 - Default-deny egress policy
+# dropped SSH access, because short-term keys are currently not available (SSH certificates - HA Host OS is immutable, SSH-Addon is transient)
+
 
 ### Agent Capabilities
 Inside the container, Claude Code can:
-- SSH to HA: validate config, inspect files
+- API to HA: inspect files, modify configuration, operate system
 - Playwright MCP: browse HA web UI, configure automations
 - Git/GitHub: clone repos, create PRs, manage issues
 
@@ -93,4 +94,4 @@ Inside the container, Claude Code can:
 - Claude Code sessions are stateless; GitHub issues/PRs serve as persistent memory
 
 ## Implementation
-See [docs/agent-container-implementation.md](../docs/agent-container-implementation.md)
+See [implementation.md](implementation.md)

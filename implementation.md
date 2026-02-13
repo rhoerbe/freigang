@@ -1,18 +1,30 @@
 # Agent Container Implementation
 
-Implementation details for the agent isolation design described in [agent_containers/README.md](../agent_containers/README.md).
+Implementation details for the agent isolation design described in [README.md](README.md).
+
+## Prerequisites
+
+Rootless Podman requires:
+```bash
+export XDG_RUNTIME_DIR=/run/user/$(id -u)
+```
+
+If systemd user session is unavailable (e.g., SSH without `loginctl enable-linger`), use cgroupfs:
+```bash
+podman --cgroup-manager=cgroupfs <command>
+```
 
 ## Container Setup
 
 ### Build the container image
 ```bash
 cd agent_containers
-podman build -t claude-ha-agent .
+podman --cgroup-manager=cgroupfs build -t claude-ha-agent .
 ```
 
 ### Create podman network
 ```bash
-podman network create ha-agent-net --subnet 10.89.1.0/24
+podman --cgroup-manager=cgroupfs network create ha-agent-net --subnet 10.89.1.0/24
 ```
 
 ### Create podman secrets
@@ -23,98 +35,77 @@ podman secret create ha_access_token ~/.secrets/ha_access_token
 ```
 
 ### Run the container
+Uses `--userns=keep-id` to map host UID into container, simplifying volume permissions.
+
 ```bash
-podman run -it --name claude-ha-agent \
-  -v ./agent-ha-key:/home/agent/.ssh/id_ed25519:ro,Z \
-  -v ./agent-ha-key-cert.pub:/home/agent/.ssh/id_ed25519-cert.pub:ro,Z \
-  -v ./ssh_config:/home/agent/.ssh/config:ro,Z \
-  -v ./ha-workspace:/home/agent/workspace:Z \
-  -v ./sessions:/home/agent/sessions:Z \
+podman --cgroup-manager=cgroupfs run -it --name claude-ha-agent \
+  --userns=keep-id \
+  -v ./workspace:/workspace:Z \
+  -v ./sessions:/sessions:Z \
   --secret anthropic_api_key,target=/run/secrets/anthropic_api_key \
   --secret github_token,target=/run/secrets/github_token \
   --secret ha_access_token,target=/run/secrets/ha_access_token \
   --network=ha-agent-net \
+  -e HTTP_PROXY=http://host.containers.internal:8888 \
+  -e HTTPS_PROXY=http://host.containers.internal:8888 \
+  -e HOME=/workspace \
   claude-ha-agent \
-  script -f /home/agent/sessions/session-$(date +%Y%m%d-%H%M%S).log -c claude-code
+  bash
 ```
 
-## SSH Configuration
+## Home Assistant Access
 
-### SSH certificate signing (on management host)
+The agent uses the HA REST API with a Long-Lived Access Token:
+
 ```bash
-# Generate CA key (once)
-ssh-keygen -t ed25519 -f ca_key -C "agent-ca"
-
-# Sign agent's public key (daily via cron)
-ssh-keygen -s ca_key -I "ha-agent" -n ha_agent -V +1d agent_key.pub
-```
-
-### authorized_keys on HA host
-```
-command="/usr/local/bin/ha-agent-shell",no-port-forwarding,no-X11-forwarding ssh-ed25519 AAAA...
-```
-
-### SSH config (container)
-```
-Host ha
-    HostName 10.4.4.10
-    User ha_agent
-    StrictHostKeyChecking accept-new
+HA_TOKEN=$(cat /run/secrets/ha_access_token)
+curl -H "Authorization: Bearer $HA_TOKEN" http://10.4.4.10:8123/api/states
 ```
 
 ## Network Isolation
 
-### Tinyproxy on host (tinyproxy.conf)
-```
-Allow 10.89.1.0/24
-FilterURLs On
-Filter "/etc/tinyproxy/allowlist"
-```
-
-### Domain allowlist (/etc/tinyproxy/allowlist)
-```
-^10\.4\.4\.10
-^(.*\.)?github\.com
-^(.*\.)?githubusercontent\.com
-^api\.anthropic\.com
-^(.*\.)?npmjs\.org
+### Deploy via Ansible
+Deploys tinyproxy and nftables rules:
+```bash
+cd agent_containers/ansible
+ansible-playbook playbooks/agent-proxy.yml
 ```
 
-### nftables rules on host
+### Tinyproxy
+- Listens on `0.0.0.0:8888` (podman network interface is ephemeral)
+- Access restricted via `Allow` directive to container subnets
+- Domain allowlist with `FilterDefaultDeny Yes` and `FilterType ere` (extended regex)
+
+Allowed domains (configured in `roles/tinyproxy/defaults/main.yml`):
+- `10.4.4.10` (Home Assistant)
+- `*.github.com`, `*.githubusercontent.com`
+- `api.anthropic.com`
+- `*.npmjs.org`
+
+### nftables rules
+
+Note: With rootless podman (slirp4netns/pasta), nftables FORWARD chain is bypassed.
+Security is enforced via tinyproxy `FilterDefaultDeny` instead.
+
 ```nft
 table inet agent-firewall {
     chain forward {
-        type filter hook forward priority 0; policy drop;
-
-        # Identify traffic from the agent container network
+        type filter hook forward priority filter; policy accept;
         ip saddr 10.89.1.0/24 jump agent-egress
     }
 
     chain agent-egress {
-        # Allow established/related
         ct state established,related accept
-
-        # Allow proxy port on host
-        ip daddr 10.89.1.1 tcp dport 8888 accept
-
-        # Allow SSH to HA node
-        ip daddr 10.4.4.10 tcp dport 22 accept
-
-        # Drop everything else (implicit via policy)
+        ip daddr 10.89.1.1 tcp dport 8888 accept   # proxy
+        ip daddr 10.4.4.10 accept                   # HA (HTTP API)
+        log prefix "agent-blocked: " drop
     }
 }
 ```
 
-### Container proxy environment
-Set in container or Dockerfile:
-```bash
-export HTTP_PROXY=http://host.containers.internal:8888
-export HTTPS_PROXY=http://host.containers.internal:8888
-```
-
 ## MCP Configuration
 
-### Claude Code MCP config (~/.claude/claude_code_config.json)
+Claude Code MCP config (`~/.claude/claude_code_config.json`):
 ```json
 {
   "mcpServers": {
@@ -128,7 +119,11 @@ export HTTPS_PROXY=http://host.containers.internal:8888
 
 ## Session Recording
 
-Sessions are recorded via `script` to the mounted `sessions/` volume.
+Sessions can be recorded via `script` to a mounted volume:
+```bash
+script -f /sessions/session-$(date +%Y%m%d-%H%M%S).log -c claude-code
+```
+
 Replay with:
 ```bash
 scriptreplay sessions/session-YYYYMMDD-HHMMSS.log
