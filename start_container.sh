@@ -1,16 +1,24 @@
 #!/bin/bash
 # Start claude-ha-agent container with least-privilege configuration
-# Run as: ha_agent user
 # Uses rootless Podman with --userns=keep-id for UID mapping
+#
+# Can be run from anywhere - automatically switches to ha_agent user
 set -e
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+AGENT_USER="ha_agent"
+AGENT_HOME="/home/$AGENT_USER"
+
+# Re-exec as ha_agent if not already
+if [[ "$(id -un)" != "$AGENT_USER" ]]; then
+    exec sudo -iu "$AGENT_USER" bash -c "cd && ./start_container.sh $*"
+fi
+
 CONTAINER_NAME="claude-ha-agent"
 
 export XDG_RUNTIME_DIR=/run/user/$(id -u)
 
 # Create directories if they don't exist
-mkdir -p "$SCRIPT_DIR/workspace" "$SCRIPT_DIR/sessions"
+mkdir -p "$AGENT_HOME/workspace" "$AGENT_HOME/sessions"
 
 # Preflight checks
 echo "Preflight checks..."
@@ -43,8 +51,8 @@ podman --cgroup-manager=cgroupfs rm -f "$CONTAINER_NAME" 2>/dev/null || true
 exec podman --cgroup-manager=cgroupfs run --rm -it \
     --name "$CONTAINER_NAME" \
     --userns=keep-id \
-    -v "$SCRIPT_DIR/workspace":/workspace:Z \
-    -v "$SCRIPT_DIR/sessions":/sessions:Z \
+    -v "$AGENT_HOME/workspace":/workspace:Z \
+    -v "$AGENT_HOME/sessions":/sessions:Z \
     --secret anthropic_api_key,target=/run/secrets/anthropic_api_key \
     --secret github_token,target=/run/secrets/github_token \
     --secret ha_access_token,target=/run/secrets/ha_access_token \
@@ -53,4 +61,4 @@ exec podman --cgroup-manager=cgroupfs run --rm -it \
     -e HTTPS_PROXY=http://host.containers.internal:8888 \
     -e HOME=/workspace \
     "$CONTAINER_NAME" \
-    "${@:-bash}"
+    "${@:-claude}"
