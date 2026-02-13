@@ -1,0 +1,4 @@
+Host ha
+    HostName 10.4.4.10
+    User homeassistant
+    StrictHostKeyChecking accept-new
