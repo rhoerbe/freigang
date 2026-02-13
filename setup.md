@@ -7,11 +7,6 @@ The agent runs as a dedicated system user `ha_agent` on the host, following IAM 
 ```
 Host (riva)
 ├── User: ha_agent
-│   ├── ~/.ssh/
-│   │   ├── id_ed25519           # Agent SSH key
-│   │   ├── id_ed25519-cert.pub  # Short-lived certificate
-│   │   ├── config               # SSH client config
-│   │   └── ca/ca_key            # CA for signing certs
 │   ├── ~/.secrets/              # API keys, tokens
 │   ├── ~/.claude/               # Claude Code config
 │   ├── ~/workspace/             # Git repos
@@ -35,66 +30,24 @@ ansible-playbook playbooks/agent-setup.yml
 
 This creates:
 - User `ha_agent` with home directory
-- SSH key pair and CA
-- Initial certificate (valid 1 day)
-- Cron job for daily certificate renewal
 - Enabled lingering (systemd user services)
 
-## 2. Create ha_agent User on HA Host
+## 2. Create HA Long-Lived Access Token
 
-On Home Assistant, create the `ha_agent` user:
-- **HA OS**: Settings → People → Users → Add User
-  - Username: `ha_agent`
-  - Enable "Can only log in from the local network" (optional)
-  - Enable "Administrator" if the agent needs full access
-- **Or via CLI** (if SSH addon installed): `ha auth create --name ha_agent`
-
-## 3. Configure HA Host to Trust Agent CA
-
-Copy the CA public key to HA host:
-```bash
-sudo -u ha_agent cat /home/ha_agent/.ssh/ca/ca_key.pub | \
-  ssh root@10.4.4.10 "cat >> /etc/ssh/ca-keys.pub"
-```
-
-On HA host (10.4.4.10), add to `/etc/ssh/sshd_config`:
-```
-TrustedUserCAKeys /etc/ssh/ca-keys.pub
-```
-
-Reload sshd (HA OS runs in container without systemd):
-```bash
-ssh root@10.4.4.10 "kill -HUP \$(cat /var/run/sshd.pid)"
-```
-
-### (Future step) Restrict agent to forced commands
-
-On HA host, create `/usr/local/bin/ha-agent-shell`:
-```bash
-#!/bin/bash
-# Allowed commands for ha_agent
-case "$SSH_ORIGINAL_COMMAND" in
-  "ha core check"*|"ha config"*|"cat /config/"*)
-    eval "$SSH_ORIGINAL_COMMAND"
-    ;;
-  *)
-    echo "Command not allowed: $SSH_ORIGINAL_COMMAND"
-    exit 1
-    ;;
-esac
-```
-
-And in `sshd_config`:
-```
-Match User ha_agent
-    ForceCommand /usr/local/bin/ha-agent-shell
-```
+In Home Assistant:
+1. Go to your Profile (bottom left)
+2. Scroll to "Long-Lived Access Tokens"
+3. Click "Create Token"
+4. Name it `ha_agent`
+5. Copy the token (shown only once)
 
 ## 3. Provision API Keys and Tokens
 
 Switch to ha_agent:
 ```bash
 sudo -iu ha_agent
+mkdir -p ~/.secrets
+chmod 700 ~/.secrets
 ```
 
 ### Anthropic API key
@@ -112,7 +65,6 @@ chmod 600 ~/.secrets/github_token
 ```
 
 ### Home Assistant access token
-In HA: Profile → Long-Lived Access Tokens → Create Token
 ```bash
 echo -n "eyJ..." > ~/.secrets/ha_access_token
 chmod 600 ~/.secrets/ha_access_token
@@ -182,8 +134,9 @@ sudo -iu ha_agent
 
 Inside the container:
 ```bash
-# Test SSH to HA
-ssh ha "echo ok"
+# Test HA API access
+HA_TOKEN=$(cat /run/secrets/ha_access_token)
+curl -s -H "Authorization: Bearer $HA_TOKEN" http://10.4.4.10:8123/api/
 
 # Test proxy (should work)
 curl -I https://api.github.com
@@ -224,7 +177,6 @@ systemctl --user enable claude-ha-agent
 
 | Credential | Rotation | Method |
 |------------|----------|--------|
-| SSH certificate | Daily | Cron job (automatic) |
 | Anthropic API key | As needed | Update ~/.secrets/, recreate podman secret |
 | GitHub token | 90 days | Regenerate, update secret |
 | HA access token | As needed | Regenerate in HA UI, update secret |
@@ -240,7 +192,7 @@ podman secret create anthropic_api_key ~/.secrets/anthropic_api_key
 
 | Playbook | Purpose | Run as |
 |----------|---------|--------|
-| `agent-setup.yml` | Create ha_agent user, SSH keys, CA | Admin (sudo) |
+| `agent-setup.yml` | Create ha_agent user | Admin (sudo) |
 | `agent-proxy.yml` | Deploy tinyproxy + nftables | Admin (sudo) |
 
 ## Troubleshooting
@@ -249,18 +201,6 @@ podman secret create anthropic_api_key ~/.secrets/anthropic_api_key
 ```bash
 systemctl status tinyproxy
 ss -tlnp | grep 8888
-```
-
-### SSH certificate expired
-Check validity:
-```bash
-sudo -u ha_agent ssh-keygen -L -f /home/ha_agent/.ssh/id_ed25519-cert.pub
-```
-
-Manually renew:
-```bash
-sudo -iu ha_agent
-ssh-keygen -s ~/.ssh/ca/ca_key -I ha_agent -n ha_agent -V +1d ~/.ssh/id_ed25519.pub
 ```
 
 ### Blocked network traffic

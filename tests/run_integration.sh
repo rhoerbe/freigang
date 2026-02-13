@@ -64,14 +64,9 @@ mkdir -p "$SCRIPT_DIR/screenshots"
 echo "Starting test container..."
 
 # Run tests in container
-# Note: With --userns=keep-id, container runs as host UID. Mount SSH to $HOME/.ssh
-# and set HOME to container WORKDIR (/workspace) for proper access.
 podman --cgroup-manager=cgroupfs run --rm \
     --name "$CONTAINER_NAME" \
     --userns=keep-id \
-    -v ~/.ssh/id_ed25519:/workspace/.ssh/id_ed25519:ro,Z \
-    -v ~/.ssh/id_ed25519-cert.pub:/workspace/.ssh/id_ed25519-cert.pub:ro,Z \
-    -v ~/.ssh/config:/workspace/.ssh/config:ro,Z \
     -v "$SCRIPT_DIR":/tests:Z \
     --secret anthropic_api_key,target=/run/secrets/anthropic_api_key \
     --secret github_token,target=/run/secrets/github_token \

@@ -1,18 +1,5 @@
 # Agent Container Usage
 
-## Refresh SSH Certificate
-
-```bash
-# As ha_agent user
-sudo -iu ha_agent
-
-# Sign the key with local CA (valid 1 week)
-ssh-keygen -s ~/.ssh/ca/ca_key -I ha_agent -n ha_agent -V +1w ~/.ssh/id_ed25519.pub
-
-# Verify certificate
-ssh-keygen -L -f ~/.ssh/id_ed25519-cert.pub
-```
-
 ## Start Container
 
 ```bash
@@ -26,9 +13,6 @@ export XDG_RUNTIME_DIR=/run/user/$(id -u)
 podman --cgroup-manager=cgroupfs run --rm -it \
     --name claude-ha-agent \
     --userns=keep-id \
-    -v ~/.ssh/id_ed25519:/workspace/.ssh/id_ed25519:ro,Z \
-    -v ~/.ssh/id_ed25519-cert.pub:/workspace/.ssh/id_ed25519-cert.pub:ro,Z \
-    -v ~/.ssh/config:/workspace/.ssh/config:ro,Z \
     --secret anthropic_api_key,target=/run/secrets/anthropic_api_key \
     --secret github_token,target=/run/secrets/github_token \
     --secret ha_access_token,target=/run/secrets/ha_access_token \
@@ -38,6 +22,27 @@ podman --cgroup-manager=cgroupfs run --rm -it \
     -e HOME=/workspace \
     claude-ha-agent \
     bash
+```
+
+## Home Assistant Access
+
+The agent uses the HA REST API via HTTP. The `ha_access_token` secret provides authentication.
+
+```bash
+# Inside container - example API calls
+HA_TOKEN=$(cat /run/secrets/ha_access_token)
+
+# Get HA state
+curl -s -H "Authorization: Bearer $HA_TOKEN" http://10.4.4.10:8123/api/
+
+# List all entities
+curl -s -H "Authorization: Bearer $HA_TOKEN" http://10.4.4.10:8123/api/states
+
+# Call a service
+curl -s -X POST -H "Authorization: Bearer $HA_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d '{"entity_id": "light.living_room"}' \
+    http://10.4.4.10:8123/api/services/light/turn_on
 ```
 
 ## Run Integration Tests

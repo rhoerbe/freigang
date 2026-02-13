@@ -4,15 +4,7 @@ agent_shell: /bin/bash
 
 # Directories to create in agent home
 agent_directories:
-  - .ssh
   - .secrets
   - .claude
   - workspace
   - sessions
-
-# SSH CA for signing agent certificates
-agent_ssh_ca_dir: "/home/{{ agent_username }}/.ssh/ca"
-
-# Remote HA host settings
-ha_host: "10.4.4.10"
-ha_user: "ha_agent"
