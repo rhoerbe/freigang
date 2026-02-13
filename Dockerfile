@@ -26,10 +26,7 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
 # Playwright MCP server + browser
 RUN npx playwright install chromium
 
-# Non-root agent user
-RUN useradd -m -s /bin/bash agent
-USER agent
-WORKDIR /home/agent
+WORKDIR /workspace
 
-# MCP config for Claude Code
-COPY --chown=agent:agent mcp-config.json /home/agent/.claude/claude_code_config.json
+# MCP config template (copied to user home at runtime via --userns=keep-id)
+COPY mcp-config.json /etc/claude/mcp-config.json

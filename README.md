@@ -28,8 +28,9 @@ Repo: rhoerbe:hadmin
 ## Design
 
 ### Isolation Model
-Plain containers (Podman) provide filesystem and process isolation while sharing the host kernel.
-The agent cannot access the host home directory unless explicitly bind-mounted.
+Rootless Podman provides filesystem and process isolation while sharing the host kernel.
+Container UID 0 maps to unprivileged host UID via user namespaces—no in-container non-root user needed.
+Use `--userns=keep-id` to map host UID into container for clean volume permissions.
 For trusted agents (not adversarial code), this isolation level is sufficient.
 
 ```
@@ -92,4 +93,4 @@ Inside the container, Claude Code can:
 - Claude Code sessions are stateless; GitHub issues/PRs serve as persistent memory
 
 ## Implementation
-See [implementation.md](implementation.md)
+See [docs/agent-container-implementation.md](../docs/agent-container-implementation.md)
