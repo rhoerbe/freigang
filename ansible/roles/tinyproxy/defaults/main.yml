@@ -11,5 +11,7 @@ tinyproxy_allowed_domains:
   - "^10\\.4\\.4\\.10(:[0-9]+)?"
   - "^(.*\\.)?github\\.com(:[0-9]+)?"
   - "^(.*\\.)?githubusercontent\\.com(:[0-9]+)?"
-  - "^api\\.anthropic\\.com(:[0-9]+)?"
+  - "^(.*\\.)?anthropic\\.com(:[0-9]+)?"
+  - "^(.*\\.)?claude\\.ai(:[0-9]+)?"
+  - "^(.*\\.)?claude\\.com(:[0-9]+)?"
   - "^(.*\\.)?npmjs\\.org(:[0-9]+)?"
