@@ -10,7 +10,7 @@ AGENT_HOME="/home/$AGENT_USER"
 
 # Re-exec as ha_agent if not already
 if [[ "$(id -un)" != "$AGENT_USER" ]]; then
-    exec sudo -iu "$AGENT_USER" bash -c "cd && ./start_container.sh $*"
+    exec sudo -iu "$AGENT_USER" "$AGENT_HOME/start_container.sh" "$@"
 fi
 
 CONTAINER_NAME="claude-ha-agent"
@@ -50,8 +50,14 @@ GH_TOKEN=$(cat "$AGENT_HOME/.secrets/github_token")
 # Remove old container if exists
 podman --cgroup-manager=cgroupfs rm -f "$CONTAINER_NAME" 2>/dev/null || true
 
+# Determine TTY flags
+TTY_FLAGS=""
+if [[ -t 0 ]]; then
+    TTY_FLAGS="-it"
+fi
+
 # Start container
-exec podman --cgroup-manager=cgroupfs run --rm -it \
+exec podman --cgroup-manager=cgroupfs run --rm $TTY_FLAGS \
     --name "$CONTAINER_NAME" \
     --userns=keep-id \
     -v "$AGENT_HOME/.claude":/workspace/.claude:Z \
