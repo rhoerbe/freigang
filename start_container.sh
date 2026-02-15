@@ -47,8 +47,9 @@ fi
 
 echo "Preflight checks passed."
 
-# Load GitHub token for gh CLI
+# Load tokens for CLI tools
 GH_TOKEN=$(cat "$AGENT_HOME/.secrets/github_token")
+ANTHROPIC_API_KEY=$(cat "$AGENT_HOME/.secrets/anthropic_api_key")
 
 # Network test script to run inside container
 NETWORK_TEST_SCRIPT='
@@ -166,6 +167,7 @@ if [[ "$1" == "--test" ]]; then
         -e NO_PROXY="api.anthropic.com,claude.ai,platform.claude.com,anthropic.com" \
         -e HOME=/workspace \
         -e GH_TOKEN="$GH_TOKEN" \
+        -e ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
         "$CONTAINER_NAME" \
         bash -c "$NETWORK_TEST_SCRIPT"
 
@@ -191,5 +193,6 @@ exec podman --cgroup-manager=cgroupfs run --rm -it \
     -e NO_PROXY="api.anthropic.com,claude.ai,platform.claude.com,anthropic.com" \
     -e HOME=/workspace \
     -e GH_TOKEN="$GH_TOKEN" \
+    -e ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
     "$CONTAINER_NAME" \
     "${@:-claude}"
