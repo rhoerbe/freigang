@@ -63,6 +63,7 @@ exec podman --cgroup-manager=cgroupfs run --rm -it \
     --network=ha-agent-net \
     -e HTTP_PROXY=http://host.containers.internal:8888 \
     -e HTTPS_PROXY=http://host.containers.internal:8888 \
+    -e NO_PROXY="api.anthropic.com,claude.ai,platform.claude.com,anthropic.com" \
     -e HOME=/workspace \
     -e GH_TOKEN="$GH_TOKEN" \
     "$CONTAINER_NAME" \
