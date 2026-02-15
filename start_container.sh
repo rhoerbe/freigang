@@ -19,6 +19,9 @@ fi
 
 CONTAINER_NAME="claude-ha-agent"
 
+# Load configuration
+source "$SCRIPT_DIR/config.sh"
+
 export XDG_RUNTIME_DIR=/run/user/$(id -u)
 
 # Create directories if they don't exist
@@ -46,6 +49,7 @@ exec podman --cgroup-manager=cgroupfs run --rm -it \
     --userns=keep-id \
     -v "$AGENT_HOME/workspace":/workspace:Z \
     -v "$AGENT_HOME/sessions":/sessions:Z \
+    -w "/workspace/$REPO_NAME" \
     --network=ha-agent-net \
     -e HTTP_PROXY=http://host.containers.internal:8888 \
     -e HTTPS_PROXY=http://host.containers.internal:8888 \
