@@ -58,4 +58,4 @@ exec podman --cgroup-manager=cgroupfs run --rm -it \
     -e GH_TOKEN="$GH_TOKEN" \
     -e HA_ACCESS_TOKEN="$HA_ACCESS_TOKEN" \
     "$CONTAINER_NAME" \
-    "${@:-claude}"
+    "${@:-claude $CLAUDE_ARGS}"
