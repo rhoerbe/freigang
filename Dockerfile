@@ -32,7 +32,7 @@ RUN curl -fsSL https://github.com/mikefarah/yq/releases/latest/download/yq_linux
     && chmod +x /usr/local/bin/yq
 
 # Playwright MCP server + browser
-RUN npm install -g playwright && playwright install chromium
+RUN npm install -g playwright @anthropic-ai/mcp-server-playwright && playwright install chromium
 
 # MQTT MCP server for debugging MQTT brokers
 RUN git clone --depth 1 https://github.com/sergiudanstan/mqtt-mcp-server.git /opt/mqtt-mcp-server \
