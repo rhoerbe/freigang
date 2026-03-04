@@ -1,0 +1,10 @@
+- github
+  - finegrainedaccesstoken: xyz
+  - permission
+  - repos
+- network
+  - DNS: allow
+  - TCP
+    - IP:port
+  - Proxy
+- filesystem

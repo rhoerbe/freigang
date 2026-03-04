@@ -1,6 +1,6 @@
 # Agent Container Implementation
 
-Implementation details for the agent isolation design described in [README.md](README.md).
+Implementation details for the agent isolation design described in [README.md](prototype_spec.md).
 
 ## Prerequisites
 
