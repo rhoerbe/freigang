@@ -138,9 +138,9 @@ class LauncherApp(App):
             # Session
             with Vertical(classes="section"):
                 yield Label("Session", classes="section-title")
-                session_options = [("new", "Start fresh"), ("continue", "Continue last")]
+                session_options = [("Start fresh", "new"), ("Continue last", "continue")]
                 for sess in self.config.get("sessions", []):
-                    session_options.append((sess["id"], f"Resume: {sess['date']}"))
+                    session_options.append((f"Resume: {sess['date']}", sess["id"]))
                 yield Select(
                     session_options,
                     value="new",
