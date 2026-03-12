@@ -34,6 +34,10 @@ RUN apt-get update && apt-get install -y \
 # MIDDLE TIER: Tools updated weekly (yq, Playwright)
 # =============================================================================
 
+# Cache bust argument - pass --build-arg WEEKLY_CACHE_BUST=$(date +%Y-%V) to force weekly updates
+ARG WEEKLY_CACHE_BUST=default
+RUN echo "Weekly cache bust: ${WEEKLY_CACHE_BUST}"
+
 # yq - YAML processor (for HA config files)
 RUN curl -fsSL https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -o /usr/local/bin/yq \
     && chmod +x /usr/local/bin/yq
