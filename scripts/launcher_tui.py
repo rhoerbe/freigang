@@ -86,6 +86,10 @@ class LauncherApp(App):
         height: auto;
     }
 
+    .secrets-grid Static {
+        margin-right: 2;
+    }
+
     #button-row {
         height: auto;
         margin-top: 1;
@@ -188,6 +192,8 @@ class LauncherApp(App):
                     yield Label("Secrets:")
                     for secret in self.config["secrets"]:
                         yield SecretStatus(secret["name"], secret["present"])
+                    if not self.config["secrets"]:
+                        yield Static("[dim]No secrets configured[/]")
 
             # Buttons
             with Horizontal(id="button-row"):
