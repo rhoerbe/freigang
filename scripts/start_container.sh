@@ -56,21 +56,26 @@ done
 # ============================================================================
 
 show_context() {
+    local claude_args
+    claude_args=$(build_claude_args)
+    local mcp_list="${SELECTED_MCP_SERVERS[*]:-none}"
+
     echo ""
-    echo "╔════════════════════════════════════════════════════════════╗"
-    echo "║           Claude Code Container Startup                    ║"
-    echo "╠════════════════════════════════════════════════════════════╣"
-    printf "║  Host:      %-47s ║\n" "$(hostname)"
-    printf "║  Image:     %-47s ║\n" "$CONTAINER_IMAGE:latest"
-    printf "║  Repo:      %-47s ║\n" "$REPO_NAME"
-    printf "║  Mode:      %-47s ║\n" "$SELECTED_PERMISSION_MODE"
-    echo "╚════════════════════════════════════════════════════════════╝"
+    echo "╔══════════════════════════════════════════════════════════════════════╗"
+    echo "║             Freigang containerized agent startup                     ║"
+    echo "╠══════════════════════════════════════════════════════════════════════╣"
+    printf "║  Host:      %-57s ║\n" "$(hostname)"
+    printf "║  Image:     %-57s ║\n" "$CONTAINER_IMAGE:latest"
+    printf "║  Repo:      %-57s ║\n" "$REPO_NAME"
+    printf "║  Command:   %-57s ║\n" "claude $claude_args"
+    printf "║  MCP:       %-57s ║\n" "$mcp_list"
+    echo "╚══════════════════════════════════════════════════════════════════════╝"
     echo ""
 }
 
 show_main_menu() {
     local choice
-    choice=$(whiptail --title "Claude Code Launcher" \
+    choice=$(whiptail --title "Freigang Agent Launcher" \
         --menu "Select an action:" 16 60 6 \
         "1" "Start Claude (current settings)" \
         "2" "Configure MCP Servers" \
