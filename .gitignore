@@ -23,6 +23,7 @@ venv/
 !*.env.template
 !*.env.example
 .claude/settings.local.json
+.claude/projects/
 
 # Application
 config.yaml
