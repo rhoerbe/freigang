@@ -73,25 +73,31 @@ show_context() {
     echo ""
 }
 
-show_main_menu() {
-    local choice
-    choice=$(whiptail --title "Freigang Agent Launcher" \
-        --menu "Select an action:" 16 60 6 \
-        "1" "Start Claude (current settings)" \
-        "2" "Configure MCP Servers" \
-        "3" "View Secret Status" \
-        "4" "Select Permission Mode" \
-        "5" "Resume Session" \
-        "6" "Exit" \
-        3>&1 1>&2 2>&3) || return 1
-
-    echo "$choice"
+get_session_files() {
+    local sessions_dir="$AGENT_HOME/workspace/$REPO_NAME/.claude/projects"
+    SESSION_FILES=()
+    if [[ -d "$sessions_dir" ]]; then
+        while IFS= read -r -d '' file; do
+            SESSION_FILES+=("$file")
+        done < <(find "$sessions_dir" -name "*.jsonl" -type f -print0 2>/dev/null | head -z -n 5)
+    fi
 }
 
-configure_mcp() {
+show_unified_form() {
     local checklist_args=()
-    local name package description state
+    local state name package description
 
+    # ── Permission Modes (radio-style: only one should be selected) ──
+    for mode in "${PERMISSION_MODES[@]}"; do
+        if [[ "$mode" == "$SELECTED_PERMISSION_MODE" ]]; then
+            state="ON"
+        else
+            state="OFF"
+        fi
+        checklist_args+=("perm:$mode" "[Mode] $mode" "$state")
+    done
+
+    # ── MCP Servers (multi-select) ──
     for server in "${AVAILABLE_MCP_SERVERS[@]}"; do
         IFS=':' read -r name package description <<< "$server"
         state="OFF"
@@ -101,128 +107,100 @@ configure_mcp() {
                 break
             fi
         done
-        checklist_args+=("$name" "$description" "$state")
+        checklist_args+=("mcp:$name" "[MCP] $description" "$state")
     done
 
-    local selections
-    selections=$(whiptail --title "Configure MCP Servers" \
-        --checklist "Select MCP servers to enable:" 16 70 6 \
-        "${checklist_args[@]}" \
-        3>&1 1>&2 2>&3) || return 1
+    # ── Session Options (radio-style) ──
+    get_session_files
 
-    # Parse selections (whiptail returns quoted strings)
-    SELECTED_MCP_SERVERS=()
-    for sel in $selections; do
-        # Remove quotes
-        sel="${sel//\"/}"
-        SELECTED_MCP_SERVERS+=("$sel")
-    done
-}
+    if [[ "$SELECTED_SESSION" == "" ]]; then
+        state="ON"
+    else
+        state="OFF"
+    fi
+    checklist_args+=("sess:new" "[Session] Start fresh" "$state")
 
-show_secrets_status() {
-    local msg=""
-    local name description filepath
-
-    msg+="Required Secrets:\n"
-    msg+="─────────────────────────────────────\n"
-    for secret in "${REQUIRED_SECRETS[@]}"; do
-        IFS=':' read -r name description <<< "$secret"
-        filepath="$AGENT_HOME/workspace/.secrets/$name"
-        if [[ -f "$filepath" ]]; then
-            msg+="[✓] $name\n    $description\n"
-        else
-            msg+="[✗] $name (MISSING)\n    $description\n"
-        fi
-    done
-
-    msg+="\nOptional Secrets:\n"
-    msg+="─────────────────────────────────────\n"
-    for secret in "${OPTIONAL_SECRETS[@]}"; do
-        IFS=':' read -r name description <<< "$secret"
-        filepath="$AGENT_HOME/workspace/.secrets/$name"
-        if [[ -f "$filepath" ]]; then
-            msg+="[✓] $name\n    $description\n"
-        else
-            msg+="[ ] $name (not configured)\n    $description\n"
-        fi
-    done
-
-    msg+="\nSecret files location:\n$AGENT_HOME/workspace/.secrets/"
-
-    whiptail --title "Secret Status" --msgbox "$msg" 24 60
-}
-
-select_permission_mode() {
-    local radiolist_args=()
-    local state
-
-    for mode in "${PERMISSION_MODES[@]}"; do
-        if [[ "$mode" == "$SELECTED_PERMISSION_MODE" ]]; then
+    if [[ ${#SESSION_FILES[@]} -gt 0 ]]; then
+        if [[ "$SELECTED_SESSION" == "--continue" ]]; then
             state="ON"
         else
             state="OFF"
         fi
-        radiolist_args+=("$mode" "" "$state")
+        checklist_args+=("sess:continue" "[Session] Continue last" "$state")
+
+        for file in "${SESSION_FILES[@]}"; do
+            local basename mtime date_str
+            basename=$(basename "$file" .jsonl)
+            mtime=$(stat -c '%Y' "$file" 2>/dev/null || echo "0")
+            date_str=$(date -d "@$mtime" '+%Y-%m-%d %H:%M' 2>/dev/null || echo "unknown")
+            if [[ "$SELECTED_SESSION" == "--resume $basename" ]]; then
+                state="ON"
+            else
+                state="OFF"
+            fi
+            checklist_args+=("sess:$basename" "[Session] Resume: $date_str" "$state")
+        done
+    fi
+
+    # ── Secrets Status (info only, always OFF) ──
+    for secret in "${REQUIRED_SECRETS[@]}"; do
+        IFS=':' read -r name description <<< "$secret"
+        local filepath="$AGENT_HOME/workspace/.secrets/$name"
+        if [[ -f "$filepath" ]]; then
+            checklist_args+=("info:$name" "[Secret ✓] $name" "OFF")
+        else
+            checklist_args+=("info:$name" "[Secret ✗] $name MISSING" "OFF")
+        fi
     done
 
-    local selection
-    selection=$(whiptail --title "Permission Mode" \
-        --radiolist "Select permission mode for Claude:" 14 50 5 \
-        "${radiolist_args[@]}" \
+    local num_items=${#checklist_args[@]}
+    num_items=$((num_items / 3))
+    local height=$((num_items + 8))
+    [[ $height -gt 24 ]] && height=24
+
+    local selections
+    selections=$(whiptail --title "Freigang Agent Launcher" \
+        --checklist "Configure and press OK to start (Cancel to exit):" \
+        $height 70 $num_items \
+        "${checklist_args[@]}" \
         3>&1 1>&2 2>&3) || return 1
 
-    if [[ -n "$selection" ]]; then
-        SELECTED_PERMISSION_MODE="$selection"
-    fi
-}
+    # Parse selections
+    SELECTED_MCP_SERVERS=()
+    local new_permission_mode=""
+    local new_session=""
 
-select_session() {
-    local sessions_dir="$AGENT_HOME/workspace/$REPO_NAME/.claude/projects"
-    local session_files=()
-    local menu_args=()
-
-    # Find session files (*.jsonl)
-    if [[ -d "$sessions_dir" ]]; then
-        while IFS= read -r -d '' file; do
-            session_files+=("$file")
-        done < <(find "$sessions_dir" -name "*.jsonl" -type f -print0 2>/dev/null | head -z -n 20)
-    fi
-
-    if [[ ${#session_files[@]} -eq 0 ]]; then
-        whiptail --title "Resume Session" --msgbox "No previous sessions found.\n\nSessions are stored in:\n$sessions_dir" 12 60
-        return 1
-    fi
-
-    menu_args+=("new" "Start fresh session" "")
-    menu_args+=("continue" "Continue last session (--continue)" "")
-
-    for file in "${session_files[@]}"; do
-        local basename
-        basename=$(basename "$file" .jsonl)
-        local mtime
-        mtime=$(stat -c '%Y' "$file" 2>/dev/null || echo "0")
-        local date_str
-        date_str=$(date -d "@$mtime" '+%Y-%m-%d %H:%M' 2>/dev/null || echo "unknown")
-        menu_args+=("$basename" "$date_str" "")
+    for sel in $selections; do
+        sel="${sel//\"/}"
+        case "$sel" in
+            perm:*)
+                new_permission_mode="${sel#perm:}"
+                ;;
+            mcp:*)
+                SELECTED_MCP_SERVERS+=("${sel#mcp:}")
+                ;;
+            sess:new)
+                new_session=""
+                ;;
+            sess:continue)
+                new_session="--continue"
+                ;;
+            sess:*)
+                new_session="--resume ${sel#sess:}"
+                ;;
+            # info: items are ignored
+        esac
     done
 
-    local selection
-    selection=$(whiptail --title "Resume Session" \
-        --menu "Select a session:" 20 70 12 \
-        "${menu_args[@]}" \
-        3>&1 1>&2 2>&3) || return 1
+    # Apply permission mode (use last selected, or keep current if none)
+    if [[ -n "$new_permission_mode" ]]; then
+        SELECTED_PERMISSION_MODE="$new_permission_mode"
+    fi
 
-    case "$selection" in
-        new)
-            SELECTED_SESSION=""
-            ;;
-        continue)
-            SELECTED_SESSION="--continue"
-            ;;
-        *)
-            SELECTED_SESSION="--resume $selection"
-            ;;
-    esac
+    # Apply session selection
+    SELECTED_SESSION="$new_session"
+
+    return 0
 }
 
 build_mcp_config() {
@@ -286,40 +264,15 @@ show_final_command() {
 }
 
 run_tui() {
-    while true; do
-        clear
-        show_context
+    clear
+    show_context
 
-        local choice
-        choice=$(show_main_menu) || {
-            # User pressed cancel/escape
-            echo "Cancelled."
-            exit 0
-        }
+    if ! show_unified_form; then
+        echo "Cancelled."
+        exit 0
+    fi
 
-        case "$choice" in
-            1)
-                # Start Claude
-                return 0
-                ;;
-            2)
-                configure_mcp
-                ;;
-            3)
-                show_secrets_status
-                ;;
-            4)
-                select_permission_mode
-                ;;
-            5)
-                select_session
-                ;;
-            6)
-                echo "Exiting."
-                exit 0
-                ;;
-        esac
-    done
+    return 0
 }
 
 # ============================================================================
