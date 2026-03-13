@@ -171,6 +171,12 @@ class LauncherApp(App):
         margin-left: 3;
     }
 
+    .mcp-servers-label {
+        height: 1;
+        margin-top: 1;
+        padding: 0;
+    }
+
     .secrets-grid {
         layout: horizontal;
         height: auto;
@@ -243,24 +249,13 @@ class LauncherApp(App):
                         classes="inline-select",
                     )
 
-            # MCP Servers - local scope (per-repo .mcp.json, not mixed with other projects)
+            # Tooling - Browser Automation + MCP Servers (local scope)
             with Vertical(classes="section"):
-                yield Label("MCP Servers (local scope):")
-                with Horizontal(classes="mcp-grid"):
-                    for server in self.config["mcp_installed"]:
-                        name = server["name"]
-                        enabled = name in self.config["default_mcp_servers"]
-                        yield Checkbox(
-                            server["description"],
-                            value=enabled,
-                            id=f"mcp-{name}",
-                            classes="mcp-checkbox",
-                        )
+                yield Label("Tooling:")
 
-            # Browser Automation
-            with Vertical(classes="section"):
-                yield Label("Browser Automation:")
+                # Browser Automation
                 with Horizontal(classes="browser-radio-row"):
+                    yield Label("Browser automation:", classes="inline-label")
                     default_mode = self.config.get("default_browser_mode", "none")
                     yield RadioSet(
                         RadioButton("None", value=(default_mode == "none"), id="browser-none"),
@@ -269,6 +264,21 @@ class LauncherApp(App):
                         id="browser-mode",
                     )
                     yield Checkbox("Enable VNC", value=self.config.get("default_enable_vnc", False), id="enable-vnc", classes="browser-vnc-checkbox")
+
+                # MCP Servers (excluding playwright which is covered by browser automation)
+                mcp_servers_to_show = [s for s in self.config["mcp_installed"] if s["name"] != "playwright"]
+                if mcp_servers_to_show:
+                    yield Label("MCP Servers:", classes="mcp-servers-label")
+                    with Horizontal(classes="mcp-grid"):
+                        for server in mcp_servers_to_show:
+                            name = server["name"]
+                            enabled = name in self.config["default_mcp_servers"]
+                            yield Checkbox(
+                                server["description"],
+                                value=enabled,
+                                id=f"mcp-{name}",
+                                classes="mcp-checkbox",
+                            )
 
             # Secrets (selectable - only available secrets can be enabled)
             with Vertical(classes="section"):
