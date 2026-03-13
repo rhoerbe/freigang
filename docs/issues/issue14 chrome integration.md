@@ -1,8 +1,8 @@
 ## Problem Statement
 
 Users shall have the option to use either:
-1. **Playwright MCP** - Programmatic browser automation (works headless, no GUI required)
-2. **Claude `--chrome` option** (available from 2.0.78 onwards) - Full browser with Claude extension (requires GUI)
+1. Playwright MCP - Programmatic browser automation (works headless, no GUI required)
+2. Claude `--chrome` option (available from 2.0.78 onwards) - Full browser with Claude extension (requires GUI)
 
 For the `--chrome` option, a graphical Chrome instance is required. Headless mode is not supported for this use case.
 To maintain security and environment consistency, we run this inside an isolated container.
@@ -71,7 +71,7 @@ Using a MicroVM runtime ensures the agent runs in its own dedicated virtual kern
 
 ### Dockerfile Additions (based on node:22-bookworm)
 
-**1. Install Chrome dependencies and X11 tools**
+1. Install Chrome dependencies and X11 tools
 ```dockerfile
 RUN apt-get update && apt-get install -y \
     wget \
@@ -94,7 +94,7 @@ RUN apt-get update && apt-get install -y \
     rm -rf /var/lib/apt/lists/*
 ```
 
-**2. Install Google Chrome Stable**
+2. Install Google Chrome Stable
 ```dockerfile
 RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | gpg --dearmor > /usr/share/keyrings/google-chrome.gpg && \
     echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" \
@@ -103,7 +103,7 @@ RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | gpg --d
     rm -rf /var/lib/apt/lists/*
 ```
 
-**3. Pre-configure the Claude Extension (for `--chrome` mode)**
+3. Pre-configure the Claude Extension (for `--chrome` mode)
 ```dockerfile
 # Official Extension ID for Claude in Chrome (Beta)
 RUN mkdir -p /opt/google/chrome/extensions && \
@@ -111,48 +111,44 @@ RUN mkdir -p /opt/google/chrome/extensions && \
     > /opt/google/chrome/extensions/fcoeoabgfenejglbffodgkkbkcdhcgfn.json
 ```
 
-**4. Add custom seccomp profile**
+4. Add custom seccomp profile
 ```dockerfile
-COPY chrome-seccomp.json /etc/chrome-seccomp.json
+COPY seccomp/chrome.json /etc/seccomp/chrome.json
 ```
 
 ### Chrome Seccomp Profile
 
-Chrome's sandbox fails in containers because Podman's default security profile blocks the `unshare` syscall, which Chrome uses to create isolated namespaces.
+Chrome's sandbox fails in containers because Podman's default security profile blocks the `unshare` syscall and restricts `clone` with `CLONE_NEWUSER` flag—both require `CAP_SYS_ADMIN` in the default profile.
 
-Create `chrome-seccomp.json` based on Moby's default profile with added syscalls:
+The full profile is at `containerize/seccomp/chrome.json`. It is based on [Moby's default seccomp profile (v0.1.0)](https://github.com/moby/profiles/blob/seccomp/v0.1.0/seccomp/default.json) with Chrome-specific modifications:
+
+**Chrome-specific additions (at the start of syscalls array):**
 ```json
 {
-  "comment": "Chrome sandbox requires unshare and clone with CLONE_NEWUSER",
-  "defaultAction": "SCMP_ACT_ERRNO",
-  "syscalls": [
-    {
-      "names": ["unshare"],
-      "action": "SCMP_ACT_ALLOW"
-    },
-    {
-      "names": ["clone"],
-      "action": "SCMP_ACT_ALLOW",
-      "args": [
-        {
-          "index": 0,
-          "value": 2114060288,
-          "op": "SCMP_CMP_MASKED_EQ"
-        }
-      ]
-    }
-  ]
+    "comment": "CHROME MODIFICATION: Allow unshare unconditionally (Moby default requires CAP_SYS_ADMIN)",
+    "names": ["unshare"],
+    "action": "SCMP_ACT_ALLOW"
+},
+{
+    "comment": "CHROME MODIFICATION: Allow clone/clone3 with all flags unconditionally",
+    "names": ["clone", "clone3"],
+    "action": "SCMP_ACT_ALLOW"
 }
 ```
 
-Note: This is a partial profile showing the Chrome-specific additions. The full profile should extend Moby's default.
+**Why this works:**
+- Moby default allows `unshare` only with `CAP_SYS_ADMIN` capability
+- Moby default blocks `clone` with namespace flags (value `0x7E020000` = `CLONE_NEWUSER | CLONE_NEWPID | ...`) without `CAP_SYS_ADMIN`
+- Our profile allows these unconditionally, enabling Chrome's sandbox in rootless Podman
+
+**Security note:** This profile is more permissive than the Moby default for namespace operations. The container's user namespace isolation (rootless Podman) provides the primary security boundary.
 
 ### Container Startup
 
 Add following options to `podman run`:
 ```bash
 --shm-size=2g \
---security-opt seccomp=/path/to/chrome-seccomp.json
+--security-opt seccomp=containerize/seccomp/chrome.json
 ```
 
 For VNC access during debugging (localhost only by default):
@@ -162,7 +158,7 @@ For VNC access during debugging (localhost only by default):
 # -p 5900:5900
 ```
 
-**entrypoint.sh:**
+entrypoint.sh:
 ```bash
 #!/bin/bash
 set -e
@@ -270,8 +266,8 @@ To force the test to fail, start podman with `--network none`.
 ## Next Steps
 
 1. Update the Dockerfile to include Chrome, Xvfb, and x11vnc
-2. Create and test the custom seccomp profile
-3. Verify Chrome runs with sandbox enabled (no `--no-sandbox`)
+2. ~~Create the custom seccomp profile~~ ✓ Done: `containerize/seccomp/chrome.json`
+3. Test the seccomp profile: verify Chrome runs with sandbox enabled (no `--no-sandbox`)
 4. Test Playwright MCP in headed mode with VNC observation
 5. Test Claude `--chrome` option connects to the Chrome instance
 6. Document VNC connection methods for debugging
