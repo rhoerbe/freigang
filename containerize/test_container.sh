@@ -3,7 +3,8 @@
 # Usage:
 #   test_container.sh preflight   # check prerequisites
 #   test_container.sh network     # run network tests in container
-#   test_container.sh             # run both
+#   test_container.sh chrome      # run Chrome integration test
+#   test_container.sh             # run all tests
 set -e
 
 AGENT_HOME="/home/ha_agent"
@@ -58,9 +59,34 @@ echo "=== All tests passed ==="
 '
 }
 
+run_chrome_test() {
+    echo "=== Running Chrome Integration Test ==="
+
+    # Copy test script to a temporary location accessible to the container
+    SCRIPT_DIR=$(mktemp -d)
+    cp test_chrome_integration.sh "$SCRIPT_DIR/"
+
+    podman --cgroup-manager=cgroupfs rm -f "$CONTAINER_NAME-chrome-test" 2>/dev/null || true
+
+    podman --cgroup-manager=cgroupfs run --rm \
+        --name "$CONTAINER_NAME-chrome-test" \
+        --userns=keep-id \
+        --shm-size=2g \
+        --security-opt seccomp=seccomp/chrome.json \
+        -v "$SCRIPT_DIR":/test:Z \
+        -e BROWSER_MODE=chrome \
+        -e HOME=/workspace \
+        "$CONTAINER_NAME" \
+        bash /test/test_chrome_integration.sh
+
+    # Cleanup
+    rm -rf "$SCRIPT_DIR"
+}
+
 case "${1:-all}" in
     preflight) run_preflight_checks ;;
     network)   run_network_tests ;;
-    all|"")    run_preflight_checks && run_network_tests ;;
-    *)         echo "Usage: $0 [preflight|network|all]"; exit 1 ;;
+    chrome)    run_chrome_test ;;
+    all|"")    run_preflight_checks && run_network_tests && run_chrome_test ;;
+    *)         echo "Usage: $0 [preflight|network|chrome|all]"; exit 1 ;;
 esac

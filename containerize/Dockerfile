@@ -10,7 +10,7 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
     | tee /etc/apt/sources.list.d/github-cli.list
 
-# System deps for Playwright + SSH + Git + session recording + GitHub CLI
+# System deps for Playwright + SSH + Git + session recording + GitHub CLI + Chrome/X11
 # Single apt-get update for all packages
 RUN apt-get update && apt-get install -y \
     openssh-client \
@@ -23,12 +23,35 @@ RUN apt-get update && apt-get install -y \
     vim \
     mosquitto-clients \
     gh \
-    # Playwright's Chromium dependencies
+    wget \
+    gnupg \
+    ca-certificates \
+    # X11 and VNC for Chrome GUI support
+    xvfb \
+    x11vnc \
+    dbus-x11 \
+    x11-utils \
+    # Playwright's Chromium dependencies (shared with Chrome)
     libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 \
     libdrm2 libxkbcommon0 libxcomposite1 libxdamage1 \
     libxfixes3 libxrandr2 libgbm1 libpango-1.0-0 \
     libasound2 libatspi2.0-0 \
     && rm -rf /var/lib/apt/lists/*
+
+# Google Chrome Stable installation
+RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | gpg --dearmor > /usr/share/keyrings/google-chrome.gpg && \
+    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" \
+    > /etc/apt/sources.list.d/google-chrome.list && \
+    apt-get update && apt-get install -y google-chrome-stable --no-install-recommends && \
+    rm -rf /var/lib/apt/lists/*
+
+# Pre-configure Claude Extension for Chrome (Official Extension ID: fcoeoabgfenejglbffodgkkbkcdhcgfn)
+RUN mkdir -p /opt/google/chrome/extensions && \
+    echo '{ "external_update_url": "https://clients2.google.com/service/update2/crx" }' \
+    > /opt/google/chrome/extensions/fcoeoabgfenejglbffodgkkbkcdhcgfn.json
+
+# Chrome seccomp profile for sandbox support in rootless Podman
+COPY seccomp/chrome.json /etc/seccomp/chrome.json
 
 # =============================================================================
 # MIDDLE TIER: Tools updated weekly (yq, Playwright)
