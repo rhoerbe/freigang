@@ -328,8 +328,11 @@ class LauncherApp(App):
         permission_mode = permission_select.value
 
         # Collect MCP servers (installed in container) - include package info for config generation
+        # Exclude playwright as it's handled by browser automation radio buttons
         mcp_servers = []
         for server in self.config["mcp_installed"]:
+            if server["name"] == "playwright":
+                continue  # Skip playwright, handled by browser automation
             checkbox = self.query_one(f"#mcp-{server['name']}", Checkbox)
             if checkbox.value:
                 mcp_servers.append({"name": server["name"], "package": server["package"]})
@@ -369,6 +372,12 @@ class LauncherApp(App):
 
         vnc_checkbox = self.query_one("#enable-vnc", Checkbox)
         enable_vnc = vnc_checkbox.value
+
+        # If Playwright browser mode is selected, add playwright MCP server
+        if browser_mode == "playwright":
+            playwright_server = next((s for s in self.config["mcp_installed"] if s["name"] == "playwright"), None)
+            if playwright_server:
+                mcp_servers.append({"name": "playwright", "package": playwright_server["package"]})
 
         self.result = {
             "action": "start",
