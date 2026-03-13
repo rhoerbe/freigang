@@ -35,6 +35,13 @@ start_chrome() {
     eval $(dbus-launch --sh-syntax)
     export DBUS_SESSION_BUS_ADDRESS
 
+    # Clean up stale Chrome lock files from previous runs
+    PROFILE_DIR="/workspace/.chrome-profile"
+    if [ -d "$PROFILE_DIR" ]; then
+        rm -f "$PROFILE_DIR/SingletonLock" "$PROFILE_DIR/.lock" "$PROFILE_DIR/lockfile"
+        echo "Cleaned up stale Chrome profile locks"
+    fi
+
     # Launch Chrome in the background
     # Claude Code connects to Chrome via the extension
     google-chrome \
@@ -45,7 +52,7 @@ start_chrome() {
         --disable-gpu \
         --disable-software-rasterizer \
         --disable-dev-shm-usage \
-        --user-data-dir=/workspace/.chrome-profile \
+        --user-data-dir="$PROFILE_DIR" \
         "https://claude.ai" &
 
     CHROME_PID=$!
