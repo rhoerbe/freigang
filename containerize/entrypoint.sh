@@ -26,11 +26,29 @@ start_vnc() {
     fi
 }
 
+start_chrome() {
+    echo "Starting Chrome with Claude extension"
+    # Launch Chrome in the background with remote debugging enabled
+    # Claude Code connects to Chrome via the extension
+    google-chrome \
+        --no-first-run \
+        --no-default-browser-check \
+        --disable-default-apps \
+        --disable-sync \
+        --user-data-dir=/workspace/.chrome-profile \
+        "https://claude.ai" &
+
+    # Wait a moment for Chrome to initialize
+    sleep 3
+    echo "Chrome started (PID: $!)"
+}
+
 case "$BROWSER_MODE" in
     chrome)
         # Full Chrome mode for claude --chrome
         start_xvfb
         start_vnc
+        start_chrome
         echo "Chrome mode: DISPLAY=$DISPLAY"
         ;;
     playwright)
