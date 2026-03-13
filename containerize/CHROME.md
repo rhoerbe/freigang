@@ -74,6 +74,15 @@ Custom seccomp profile that allows Chrome's sandbox to work in rootless Podman.
 - **x11vnc** - VNC server (optional, for observation)
 - **Chrome** - Runs in sandbox mode on the virtual display
 
+### Extension Installation
+The Claude Chrome extension (ID: `fcoeoabgfenejglbffodgkkbkcdhcgfn`) is configured for automatic installation via Chrome's enterprise policy (`ExtensionInstallForcelist`).
+
+On first startup:
+- Chrome will download the extension from the Chrome Web Store
+- This requires internet access (respects HTTP_PROXY settings)
+- The extension connects to Claude Code via local communication
+- First run may take a few extra seconds for extension download
+
 ### Security Model
 - Rootless Podman provides user namespace isolation
 - Chrome runs in its own sandbox (enabled via custom seccomp profile)

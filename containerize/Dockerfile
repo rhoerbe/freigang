@@ -45,10 +45,14 @@ RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | gpg --d
     apt-get update && apt-get install -y google-chrome-stable --no-install-recommends && \
     rm -rf /var/lib/apt/lists/*
 
-# Pre-configure Claude Extension for Chrome (Official Extension ID: fcoeoabgfenejglbffodgkkbkcdhcgfn)
-RUN mkdir -p /opt/google/chrome/extensions && \
-    echo '{ "external_update_url": "https://clients2.google.com/service/update2/crx" }' \
-    > /opt/google/chrome/extensions/fcoeoabgfenejglbffodgkkbkcdhcgfn.json
+# Force-install Claude Extension for Chrome using enterprise policy
+# Extension ID: fcoeoabgfenejglbffodgkkbkcdhcgfn (Claude in Chrome Beta)
+RUN mkdir -p /etc/opt/chrome/policies/managed && \
+    echo '{ \
+        "ExtensionInstallForcelist": [ \
+            "fcoeoabgfenejglbffodgkkbkcdhcgfn;https://clients2.google.com/service/update2/crx" \
+        ] \
+    }' > /etc/opt/chrome/policies/managed/claude_extension.json
 
 # Chrome seccomp profile for sandbox support in rootless Podman
 COPY seccomp/chrome.json /etc/seccomp/chrome.json
