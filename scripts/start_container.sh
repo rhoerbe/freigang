@@ -77,12 +77,21 @@ while [[ $# -gt 0 ]]; do
             # Leave --test for later handling
             break
             ;;
+        --debug)
+            set -x
+            shift
+            ;;
         *)
             # Unknown option or command, stop parsing
             break
             ;;
     esac
 done
+
+# Debug output when using command-line args
+if [[ "$SKIP_TUI" == true ]]; then
+    echo "TUI bypassed - Browser: $SELECTED_BROWSER_MODE, VNC: $SELECTED_ENABLE_VNC"
+fi
 
 # ============================================================================
 # TUI Functions
