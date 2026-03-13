@@ -30,19 +30,39 @@ start_vnc() {
 
 start_chrome() {
     echo "Starting Chrome with Claude extension"
-    # Launch Chrome in the background with remote debugging enabled
+
+    # Start a minimal dbus session to reduce Chrome errors
+    eval $(dbus-launch --sh-syntax)
+    export DBUS_SESSION_BUS_ADDRESS
+
+    # Launch Chrome in the background
     # Claude Code connects to Chrome via the extension
     google-chrome \
         --no-first-run \
         --no-default-browser-check \
         --disable-default-apps \
         --disable-sync \
+        --disable-gpu \
+        --disable-software-rasterizer \
+        --disable-dev-shm-usage \
         --user-data-dir=/workspace/.chrome-profile \
         "https://claude.ai" &
 
-    # Wait a moment for Chrome to initialize
-    sleep 3
-    echo "Chrome started (PID: $!)"
+    CHROME_PID=$!
+
+    # Wait for Chrome to initialize and extension to install
+    echo "Waiting for Chrome to initialize (PID: $CHROME_PID)..."
+    sleep 5
+
+    # Check if extension directory exists
+    EXT_DIR="/workspace/.chrome-profile/Default/Extensions/fcoeoabgfenejglbffodgkkbkcdhcgfn"
+    if [ -d "$EXT_DIR" ]; then
+        echo "✓ Claude extension installed"
+    else
+        echo "⚠ Claude extension not found - may download on first use"
+    fi
+
+    echo "Chrome started on DISPLAY=$DISPLAY"
 }
 
 case "$BROWSER_MODE" in

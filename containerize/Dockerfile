@@ -54,6 +54,9 @@ RUN mkdir -p /etc/opt/chrome/policies/managed && \
         ] \
     }' > /etc/opt/chrome/policies/managed/claude_extension.json
 
+# Create machine-id to suppress Chrome errors
+RUN dbus-uuidgen > /etc/machine-id
+
 # Chrome seccomp profile for sandbox support in rootless Podman
 COPY seccomp/chrome.json /etc/seccomp/chrome.json
 
