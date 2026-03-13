@@ -58,11 +58,28 @@ SELECTED_ENABLE_VNC="false"
 SKIP_TUI=false
 
 # Parse initial arguments
-for arg in "$@"; do
-    case "$arg" in
+while [[ $# -gt 0 ]]; do
+    case "$1" in
         --quick)
             SKIP_TUI=true
             shift
+            ;;
+        --browser=*)
+            SELECTED_BROWSER_MODE="${1#*=}"
+            SKIP_TUI=true
+            shift
+            ;;
+        --vnc)
+            SELECTED_ENABLE_VNC="true"
+            shift
+            ;;
+        --test)
+            # Leave --test for later handling
+            break
+            ;;
+        *)
+            # Unknown option or command, stop parsing
+            break
             ;;
     esac
 done
@@ -357,20 +374,60 @@ if [[ "$SKIP_TUI" == false ]]; then
     fi
 fi
 
-# If TUI was skipped, read MCP server names from Claude's config for display
-if [[ "$SKIP_TUI" == true && -z "$SELECTED_MCP_SERVER_NAMES" ]]; then
-    # MCP servers in ~/.claude.json under projects./workspace/$REPO_NAME.mcpServers
-    CLAUDE_JSON="$AGENT_HOME/workspace/.claude.json"
-    if [[ -f "$CLAUDE_JSON" ]]; then
+# If TUI was skipped, configure MCP servers based on browser mode
+if [[ "$SKIP_TUI" == true ]]; then
+    # If Playwright browser mode, enable Playwright MCP
+    if [[ "$SELECTED_BROWSER_MODE" == "playwright" ]]; then
+        SELECTED_MCP_SERVER_NAMES="playwright"
+        # Update Claude's config to enable Playwright MCP
+        CLAUDE_JSON="$AGENT_HOME/workspace/.claude.json"
         _py="python3"
         [[ -x "$AGENT_HOME/.venv/bin/python" ]] && _py="$AGENT_HOME/.venv/bin/python"
-        SELECTED_MCP_SERVER_NAMES=$($_py -c "
+
+        $_py -c "
+import json
+from pathlib import Path
+
+claude_json = Path('$CLAUDE_JSON')
+config = {}
+if claude_json.exists():
+    with open(claude_json) as f:
+        config = json.load(f)
+
+if 'projects' not in config:
+    config['projects'] = {}
+if '/workspace/$REPO_NAME' not in config['projects']:
+    config['projects']['/workspace/$REPO_NAME'] = {}
+if 'mcpServers' not in config['projects']['/workspace/$REPO_NAME']:
+    config['projects']['/workspace/$REPO_NAME']['mcpServers'] = {}
+
+config['projects']['/workspace/$REPO_NAME']['mcpServers']['playwright'] = {
+    'type': 'stdio',
+    'command': 'npx',
+    'args': ['@playwright/mcp'],
+    'env': {}
+}
+
+claude_json.parent.mkdir(parents=True, exist_ok=True)
+with open(claude_json, 'w') as f:
+    json.dump(config, f, indent=2)
+" 2>/dev/null || true
+    fi
+
+    # Read MCP server names from Claude's config for display
+    if [[ -z "$SELECTED_MCP_SERVER_NAMES" ]]; then
+        CLAUDE_JSON="$AGENT_HOME/workspace/.claude.json"
+        if [[ -f "$CLAUDE_JSON" ]]; then
+            _py="python3"
+            [[ -x "$AGENT_HOME/.venv/bin/python" ]] && _py="$AGENT_HOME/.venv/bin/python"
+            SELECTED_MCP_SERVER_NAMES=$($_py -c "
 import json
 with open('$CLAUDE_JSON') as f:
     config = json.load(f)
 project = config.get('projects', {}).get('/workspace/$REPO_NAME', {})
 print(' '.join(project.get('mcpServers', {}).keys()))
 " 2>/dev/null || echo "")
+        fi
     fi
 fi
 
