@@ -35,3 +35,14 @@ You are running in an isolated container with restricted network access.
 
 ## Purpose
 Administer Home Assistant at 10.4.4.10 via API, Playwright MCP, and MQTT debugging.
+
+## Policy Configuration
+
+Agent access policies are now defined in YAML files:
+
+- **Agent Configuration**: `/etc/freigang/agents.d/ha_agent.yaml` - Defines agent identity, repository, and available resources
+- **Policy File**: `/etc/freigang/policies/ha_agent_policy.yaml` - Specifies allowed MCP servers, secrets, network access, and filesystem permissions
+
+For details on the policy format and multi-agent setup, see:
+- [Multi-Agent Setup Guide](docs/multi-agent-setup.md)
+- [Agent Configuration Schema](docs/agent-config-schema.md)

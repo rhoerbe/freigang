@@ -44,6 +44,39 @@ Other isolation mechanisms (virtual machines, bare metal) could be used but are 
 * Orchestration (Quadlets): Systemd-integrated Podman configuration files that define the "Unit of Work."
 * MCP Sidecars: High-risk tools (Browsers, DB clients) are isolated in separate containers within the same Podman Pod, communicating via Unix Domain Sockets (UDS).
 
+### 2.3 Multi-Agent Architecture
+
+Freigang supports multiple agents with independent configurations:
+
+* **Agent Configuration**: YAML-based configuration files in `/etc/freigang/agents.d/` define per-agent settings
+* **Policy Files**: Separate policy files in `/etc/freigang/policies/` specify MCP server access, secrets, and network rules
+* **Agent Selection**: Interactive menu or `--agent` flag for explicit selection
+* **User Isolation**: Each agent runs as a dedicated Linux user for clear audit trails
+* **Repository Management**: Per-agent repositories with optional auto-sync on container startup
+* **Container Customization**: Configurable container images per agent for different tool requirements
+
+**Configuration Structure**:
+```
+/etc/freigang/
+├── agents.d/                   # Agent definitions
+│   ├── ha_agent.yaml
+│   └── wiki_agent.yaml
+├── policies/                   # Per-agent policies
+│   ├── ha_agent_policy.yaml
+│   └── wiki_agent_policy.yaml
+└── mcp-servers/
+    └── manifest.json           # Available MCP servers
+```
+
+**Key Features**:
+- Backward compatible with legacy hardcoded configuration
+- No inference from current user - explicit selection required
+- Policy-based MCP server filtering (only allowed servers shown in TUI)
+- Separate secrets and permissions per agent
+- Optional git auto-sync for keeping workspaces current
+
+For detailed setup instructions, see [Multi-Agent Setup Guide](docs/multi-agent-setup.md) and [Agent Configuration Schema](docs/agent-config-schema.md).
+
 ---
 
 ## 3. The Incremental Evolution Path

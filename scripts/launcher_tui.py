@@ -6,6 +6,7 @@ import os
 import sys
 from pathlib import Path
 
+import yaml
 from textual import on
 from textual.app import App, ComposeResult
 from textual.containers import Horizontal, Vertical
@@ -221,7 +222,15 @@ class LauncherApp(App):
         with Vertical(id="main-container"):
             # Context - single compact line
             with Vertical(classes="section"):
+                # Show agent identity if available
+                agent_prefix = ""
+                if self.config.get("agent_id"):
+                    agent_name = self.config["agent_id"]
+                    agent_desc = self.config.get("agent_desc", "")
+                    agent_prefix = f"Agent: [bold]{agent_name}[/] ({agent_desc})  |  "
+
                 context_str = (
+                    f"{agent_prefix}"
                     f"Host: [bold]{self.config['hostname']}[/]  |  "
                     f"Image: [bold]{self.config['container_image']}[/]  |  "
                     f"Repo: [bold]{self.config['repo_name']}[/]"
@@ -422,6 +431,11 @@ def load_config() -> dict:
     repo_name = os.environ.get("REPO_NAME", "hadmin")
     container_image = os.environ.get("CONTAINER_IMAGE", "claude-ha-agent")
 
+    # Load agent identity if using YAML config
+    agent_id = os.environ.get("AGENT_ID")
+    agent_desc = os.environ.get("AGENT_DESC")
+    agent_config_file = os.environ.get("AGENT_CONFIG_FILE")
+
     # User preferences path
     prefs_path = Path(os.environ.get("LAUNCHER_PREFS_PATH", f"{agent_home}/workspace/{repo_name}/.claude/launcher_preferences.json"))
     user_prefs = load_user_preferences(prefs_path)
@@ -446,6 +460,24 @@ def load_config() -> dict:
             pass
 
     mcp_installed = mcp_manifest.get("installed", [])
+
+    # Filter MCP servers by agent config if available
+    if agent_config_file and Path(agent_config_file).exists():
+        try:
+            with open(agent_config_file) as f:
+                agent_config = yaml.safe_load(f)
+
+            # Extract allowed MCP servers from agent config
+            allowed_mcp_servers = agent_config.get("resources", {}).get("allowed_mcp_servers", [])
+            if allowed_mcp_servers:
+                # Filter installed servers by allowed list
+                mcp_installed = [
+                    srv for srv in mcp_installed
+                    if srv["name"] in allowed_mcp_servers
+                ]
+        except (yaml.YAMLError, IOError, KeyError):
+            # If config loading fails, use unfiltered list
+            pass
 
     # Claude's main config file - MCP servers go under projects.<path>.mcpServers
     # This is what `claude mcp add -s local` uses - automatically trusted (no approval needed)
@@ -500,7 +532,7 @@ def load_config() -> dict:
     import socket
     hostname = socket.gethostname()
 
-    return {
+    config_dict = {
         "hostname": hostname,
         "container_image": container_image,
         "repo_name": repo_name,
@@ -518,6 +550,13 @@ def load_config() -> dict:
         "claude_settings": claude_settings,
         "container_project_path": container_project_path,
     }
+
+    # Add agent identity if available
+    if agent_id:
+        config_dict["agent_id"] = agent_id
+        config_dict["agent_desc"] = agent_desc
+
+    return config_dict
 
 
 def main() -> int:

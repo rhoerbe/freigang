@@ -107,5 +107,15 @@ case "$BROWSER_MODE" in
         ;;
 esac
 
+# Auto-sync repository if configured
+if [[ "$REPO_AUTO_SYNC" == "true" ]]; then
+    echo "Auto-syncing repository: $REPO_NAME"
+    cd "/workspace/$REPO_NAME" 2>/dev/null || true
+    if [[ -d .git ]]; then
+        git pull --ff-only 2>&1 | head -5
+    fi
+    cd /workspace
+fi
+
 # Execute the command passed to the container
 exec "$@"

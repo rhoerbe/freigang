@@ -22,13 +22,166 @@
 #
 set -e
 
-AGENT_USER="ha_agent"
-AGENT_HOME="/home/$AGENT_USER"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Re-exec as ha_agent if not already
-if [[ "$(id -un)" != "$AGENT_USER" ]]; then
-    exec sudo -iu "$AGENT_USER" "$AGENT_HOME/start_container.sh" "$@"
+# ============================================================================
+# Agent Selection Functions
+# ============================================================================
+
+select_agent() {
+    # Select agent interactively or from CLI arg
+    local agents_dir="/etc/freigang/agents.d"
+
+    # Check for --agent flag
+    if [[ -n "$EXPLICIT_AGENT" ]]; then
+        if [[ -f "$agents_dir/${EXPLICIT_AGENT}.yaml" ]]; then
+            SELECTED_AGENT="$EXPLICIT_AGENT"
+            return 0
+        else
+            echo "Error: Agent config not found: $EXPLICIT_AGENT"
+            exit 1
+        fi
+    fi
+
+    # Legacy mode: no agents.d directory
+    if [[ ! -d "$agents_dir" ]]; then
+        echo "Running in legacy mode (no agent configs found)"
+        return 0
+    fi
+
+    # Count available agents
+    local agent_count=$(ls -1 "$agents_dir"/*.yaml 2>/dev/null | wc -l)
+
+    if [[ $agent_count -eq 0 ]]; then
+        echo "Error: No agent configs found in $agents_dir"
+        exit 1
+    fi
+
+    if [[ $agent_count -eq 1 ]]; then
+        # Auto-select single agent
+        SELECTED_AGENT=$(basename "$(ls "$agents_dir"/*.yaml)" .yaml)
+        echo "Selected agent: $SELECTED_AGENT"
+        return 0
+    fi
+
+    # Interactive menu for multiple agents
+    echo "Available agents:"
+    local i=1
+    local agents=()
+    for config in "$agents_dir"/*.yaml; do
+        local name=$(basename "$config" .yaml)
+        local desc=$(yq eval '.agent_description' "$config" 2>/dev/null || echo "No description")
+        echo "  $i) $name - $desc"
+        agents+=("$name")
+        ((i++))
+    done
+
+    read -p "Select agent [1-$((i-1))]: " choice
+    if [[ $choice -ge 1 ]] && [[ $choice -lt $i ]]; then
+        SELECTED_AGENT="${agents[$((choice-1))]}"
+        echo "Selected: $SELECTED_AGENT"
+    else
+        echo "Invalid selection"
+        exit 1
+    fi
+}
+
+load_agent_config() {
+    # Load agent configuration from YAML
+    local agent_name="$1"
+    local config_file="/etc/freigang/agents.d/${agent_name}.yaml"
+
+    if [[ ! -f "$config_file" ]]; then
+        echo "Error: Agent config not found: $config_file"
+        exit 1
+    fi
+
+    export AGENT_CONFIG_FILE="$config_file"
+
+    # Parse YAML using yq
+    AGENT_ID=$(yq eval '.agent_id' "$config_file")
+    AGENT_DESC=$(yq eval '.agent_description' "$config_file")
+    AGENT_USER=$(yq eval '.linux_user.username' "$config_file")
+    AGENT_HOME=$(yq eval '.linux_user.home' "$config_file")
+
+    REPO_NAME=$(yq eval '.repository.name' "$config_file")
+    REPO_URL=$(yq eval '.repository.url' "$config_file")
+    REPO_BRANCH=$(yq eval '.repository.branch' "$config_file")
+    REPO_AUTO_SYNC=$(yq eval '.repository.auto_sync' "$config_file")
+
+    CONTAINER_IMAGE=$(yq eval '.container.image' "$config_file")
+    CONTAINER_NAME_PREFIX=$(yq eval '.container.name_prefix' "$config_file")
+    CONTAINER_NETWORK=$(yq eval '.container.network' "$config_file")
+
+    DEFAULT_PERMISSION_MODE=$(yq eval '.defaults.permission_mode' "$config_file")
+    DEFAULT_BROWSER_MODE=$(yq eval '.defaults.browser_mode' "$config_file")
+    DEFAULT_VNC=$(yq eval '.defaults.enable_vnc' "$config_file")
+
+    POLICY_FILE=$(yq eval '.policy_file' "$config_file")
+
+    echo "Loaded config for agent: $AGENT_ID ($AGENT_DESC)"
+}
+
+validate_agent_user() {
+    # Auto-switch to agent user if not already running as that user
+    local current_user=$(id -un)
+
+    if [[ "$current_user" != "$AGENT_USER" ]]; then
+        echo "Switching to user: $AGENT_USER"
+        # Use absolute path to this script (SCRIPT_DIR is already absolute)
+        local script_path="$SCRIPT_DIR/$(basename "$0")"
+        exec sudo -iu "$AGENT_USER" "$script_path" "$@"
+    fi
+}
+
+# ============================================================================
+# Main Initialization
+# ============================================================================
+
+# Parse command-line arguments for --agent flag (before agent selection)
+EXPLICIT_AGENT=""
+SAVED_ARGS=("$@")
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --agent)
+            shift
+            EXPLICIT_AGENT="$1"
+            shift
+            ;;
+        --agent=*)
+            EXPLICIT_AGENT="${1#*=}"
+            shift
+            ;;
+        *)
+            # Not an --agent flag, stop parsing
+            break
+            ;;
+    esac
+done
+
+# Restore all arguments for later processing
+set -- "${SAVED_ARGS[@]}"
+
+# Select agent (interactive or explicit)
+SELECTED_AGENT=""
+select_agent
+
+# Load agent config if available
+if [[ -n "$SELECTED_AGENT" ]]; then
+    load_agent_config "$SELECTED_AGENT"
+    validate_agent_user
+
+    # Use agent home from config
+    cd "$AGENT_HOME" || exit 1
+else
+    # Legacy mode: use current hardcoded logic
+    AGENT_USER="ha_agent"
+    AGENT_HOME="/home/$AGENT_USER"
+
+    # Re-exec as ha_agent if not already
+    if [[ "$(id -un)" != "$AGENT_USER" ]]; then
+        exec sudo -iu "$AGENT_USER" "$AGENT_HOME/start_container.sh" "$@"
+    fi
 fi
 
 # Determine paths based on environment (development repo vs deployed agent home)
@@ -136,6 +289,13 @@ export_config_for_tui() {
     export REPO_NAME
     export CONTAINER_IMAGE
 
+    # Export agent identity if using YAML config
+    if [[ -n "$AGENT_CONFIG_FILE" ]]; then
+        export AGENT_CONFIG_FILE
+        export AGENT_ID
+        export AGENT_DESC
+    fi
+
     # Permission modes as comma-separated
     export PERMISSION_MODES="${PERMISSION_MODES[*]}"
     PERMISSION_MODES="${PERMISSION_MODES// /,}"
@@ -146,6 +306,8 @@ export_config_for_tui() {
     container_manifest=$(get_mcp_manifest_from_container)
     if [[ -n "$container_manifest" && -f "$container_manifest" ]]; then
         export MCP_MANIFEST_PATH="$container_manifest"
+    elif [[ -f "/etc/freigang/mcp-servers/manifest.json" ]]; then
+        export MCP_MANIFEST_PATH="/etc/freigang/mcp-servers/manifest.json"
     elif [[ -f "$SCRIPT_DIR/../containerize/mcp-manifest.json" ]]; then
         export MCP_MANIFEST_PATH="$SCRIPT_DIR/../containerize/mcp-manifest.json"
     elif [[ -f "$SCRIPT_DIR/mcp-manifest.json" ]]; then
@@ -483,6 +645,8 @@ exec podman --cgroup-manager=cgroupfs run --rm -it \
     -e HOME=/workspace \
     -e BROWSER_MODE="$SELECTED_BROWSER_MODE" \
     -e ENABLE_VNC="$SELECTED_ENABLE_VNC" \
+    -e REPO_AUTO_SYNC="${REPO_AUTO_SYNC:-false}" \
+    -e REPO_NAME="$REPO_NAME" \
     -e GH_TOKEN="$GH_TOKEN" \
     -e HA_ACCESS_TOKEN="$HA_ACCESS_TOKEN" \
     -e MQTT_USER="$MQTT_USER" \
