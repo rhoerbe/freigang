@@ -1,4 +1,6 @@
-classDiagram
+# Domain Model
+
+```classDiagram
     Project "1" -- "*" Agent
     Project "1" -- "*" ResourceGroup
     Project "1" -- "*" Resource
@@ -42,3 +44,4 @@ classDiagram
         +CredentialType
         +Description
     }
+```
