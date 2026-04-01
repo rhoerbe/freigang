@@ -1,6 +1,7 @@
 # Domain Model
 
-```classDiagram
+```mermaid
+classDiagram
     Project "1" -- "*" Agent
     Project "1" -- "*" ResourceGroup
     Project "1" -- "*" Resource
