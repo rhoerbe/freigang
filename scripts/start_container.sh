@@ -184,6 +184,18 @@ else
     fi
 fi
 
+# Derive web access filter paths (set after agent config is loaded)
+WEB_RESOURCES_PATH=""
+ACTIVE_WEB_RESOURCES_PATH=""
+if [[ -n "$AGENT_ID" ]]; then
+    if [[ -f "/etc/freigang/policies/${AGENT_ID}_web_resources.yaml" ]]; then
+        WEB_RESOURCES_PATH="/etc/freigang/policies/${AGENT_ID}_web_resources.yaml"
+    elif [[ -f "$SCRIPT_DIR/../policies/${AGENT_ID}_web_resources.yaml" ]]; then
+        WEB_RESOURCES_PATH="$(cd "$SCRIPT_DIR/.." && pwd)/policies/${AGENT_ID}_web_resources.yaml"
+    fi
+    ACTIVE_WEB_RESOURCES_PATH="$AGENT_HOME/workspace/.secrets/active_web_resources.yaml"
+fi
+
 # Determine paths based on environment (development repo vs deployed agent home)
 if [[ -d "$SCRIPT_DIR/../containerize" ]]; then
     # Development: running from repo's scripts/ directory
@@ -208,6 +220,7 @@ SELECTED_SESSION=""
 SELECTED_MCP_SERVER_NAMES=""  # For display only - actual config in Claude's settings.json
 SELECTED_BROWSER_MODE="none"
 SELECTED_ENABLE_VNC="false"
+SELECTED_WEB_RESOURCE_GROUPS=""
 SKIP_TUI=false
 
 # Parse initial arguments
@@ -317,6 +330,10 @@ export_config_for_tui() {
     # User preferences path for persistence
     export LAUNCHER_PREFS_PATH="$AGENT_HOME/workspace/$REPO_NAME/.claude/launcher_preferences.json"
 
+    # Web access filter paths
+    export WEB_RESOURCES_PATH
+    export ACTIVE_WEB_RESOURCES_PATH
+
     export DEFAULT_MCP_SERVERS="${DEFAULT_MCP_SERVERS[*]}"
     DEFAULT_MCP_SERVERS="${DEFAULT_MCP_SERVERS// /,}"
 
@@ -381,6 +398,7 @@ run_python_tui() {
 
     # Extract MCP server names for display (actual config is written to Claude's settings.json by TUI)
     mcp_names=$(echo "$tui_output" | $py -c "import sys, json; servers=json.load(sys.stdin).get('mcp_servers', []); print(' '.join(s['name'] if isinstance(s,dict) else s for s in servers))")
+    web_groups=$(echo "$tui_output" | $py -c "import sys, json; print(','.join(json.load(sys.stdin).get('web_resource_groups', [])))")
 
     # Apply selections
     SELECTED_PERMISSION_MODE="$permission_mode"
@@ -389,6 +407,7 @@ run_python_tui() {
     SELECTED_MCP_SERVER_NAMES="$mcp_names"
     SELECTED_BROWSER_MODE="$browser_mode"
     SELECTED_ENABLE_VNC="$enable_vnc"
+    SELECTED_WEB_RESOURCE_GROUPS="$web_groups"
 
     return 0
 }
@@ -418,8 +437,11 @@ show_final_command() {
     [[ "$SELECTED_BROWSER_MODE" == "chrome" ]] && browser_label="Chrome"
     [[ "$SELECTED_ENABLE_VNC" == "true" ]] && browser_label="$browser_label+VNC"
 
+    local web_label="${SELECTED_WEB_RESOURCE_GROUPS:-all}"
+    [[ -z "$WEB_RESOURCES_PATH" ]] && web_label="n/a"
+
     echo "Starting: \`claude $claude_args\`"
-    echo "MCP Servers: ${SELECTED_MCP_SERVER_NAMES:-none}  |  Secrets: ${SELECTED_SECRETS[*]:-none}  |  Browser: $browser_label"
+    echo "MCP Servers: ${SELECTED_MCP_SERVER_NAMES:-none}  |  Secrets: ${SELECTED_SECRETS[*]:-none}  |  Browser: $browser_label  |  Web Filter: $web_label"
 }
 
 run_tui() {
@@ -504,6 +526,12 @@ if [[ $# -gt 0 && "$1" != "--"* ]]; then
         VNC_PORT_MAPPING="-p 5900:5900"
     fi
 
+    # Build web resources bind-mount (mount source policy when present)
+    WEB_RESOURCES_MOUNT=""
+    if [[ -n "$AGENT_ID" && -n "$WEB_RESOURCES_PATH" && -f "$WEB_RESOURCES_PATH" ]]; then
+        WEB_RESOURCES_MOUNT="-v $WEB_RESOURCES_PATH:/etc/freigang/policies/${AGENT_ID}_web_resources.yaml:Z,ro"
+    fi
+
     # Start container with the provided command
     exec podman --cgroup-manager=cgroupfs run --rm -it \
         --name "$CONTAINER_NAME" \
@@ -511,6 +539,7 @@ if [[ $# -gt 0 && "$1" != "--"* ]]; then
         --shm-size=2g \
         ${SECCOMP_PROFILE:+--security-opt seccomp="$SECCOMP_PROFILE"} \
         ${VNC_PORT_MAPPING} \
+        ${WEB_RESOURCES_MOUNT} \
         -v "$AGENT_HOME/workspace":/workspace:Z \
         -v "$AGENT_HOME/sessions":/sessions:Z \
         -w "/workspace/$REPO_NAME" \
@@ -628,6 +657,14 @@ if [[ "$SELECTED_ENABLE_VNC" == "true" ]]; then
     VNC_PORT_MAPPING="-p 5900:5900"
 fi
 
+# Build web resources bind-mount (active filtered file from TUI, or source policy if no TUI)
+WEB_RESOURCES_MOUNT=""
+if [[ -n "$AGENT_ID" && -f "${ACTIVE_WEB_RESOURCES_PATH:-}" ]]; then
+    WEB_RESOURCES_MOUNT="-v $ACTIVE_WEB_RESOURCES_PATH:/etc/freigang/policies/${AGENT_ID}_web_resources.yaml:Z,ro"
+elif [[ -n "$AGENT_ID" && -n "$WEB_RESOURCES_PATH" && -f "$WEB_RESOURCES_PATH" ]]; then
+    WEB_RESOURCES_MOUNT="-v $WEB_RESOURCES_PATH:/etc/freigang/policies/${AGENT_ID}_web_resources.yaml:Z,ro"
+fi
+
 # Start container with Claude
 exec podman --cgroup-manager=cgroupfs run --rm -it \
     --name "$CONTAINER_NAME" \
@@ -635,6 +672,7 @@ exec podman --cgroup-manager=cgroupfs run --rm -it \
     --shm-size=2g \
     ${SECCOMP_PROFILE:+--security-opt seccomp="$SECCOMP_PROFILE"} \
     ${VNC_PORT_MAPPING} \
+    ${WEB_RESOURCES_MOUNT} \
     -v "$AGENT_HOME/workspace":/workspace:Z \
     -v "$AGENT_HOME/sessions":/sessions:Z \
     -w "/workspace/$REPO_NAME" \

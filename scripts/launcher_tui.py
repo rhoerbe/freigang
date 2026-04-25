@@ -3,6 +3,7 @@
 
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -204,6 +205,16 @@ class LauncherApp(App):
     #exit-button {
         background: $error;
     }
+
+    .webgrp-grid {
+        layout: horizontal;
+        height: auto;
+    }
+
+    .webgrp-checkbox {
+        width: auto;
+        margin-right: 2;
+    }
     """
 
     BINDINGS = [
@@ -301,6 +312,23 @@ class LauncherApp(App):
                     if not self.config["secrets"]:
                         yield Static("[dim]No secrets configured[/]")
 
+            # Web Access Filter (only when policy groups are available)
+            if self.config.get("web_resource_groups"):
+                with Vertical(classes="section"):
+                    yield Label("Web Access Filter:")
+                    with Horizontal(classes="webgrp-grid"):
+                        for group in self.config["web_resource_groups"]:
+                            name = group["name"]
+                            url_count = len(group["urls"])
+                            enabled = name in self.config.get("default_web_groups", [name])
+                            safe_id = re.sub(r"\W", "_", name)
+                            yield Checkbox(
+                                f"{name} ({url_count} URLs)",
+                                value=enabled,
+                                id=f"webgrp-{safe_id}",
+                                classes="webgrp-checkbox",
+                            )
+
             # Buttons
             with Horizontal(id="button-row"):
                 yield Button("Start", id="start-button", variant="success")
@@ -395,6 +423,17 @@ class LauncherApp(App):
             if playwright_server:
                 mcp_servers.append({"name": "playwright", "package": playwright_server["package"]})
 
+        # Collect web resource groups
+        web_resource_groups = []
+        for group in self.config.get("web_resource_groups", []):
+            safe_id = re.sub(r"\W", "_", group["name"])
+            try:
+                checkbox = self.query_one(f"#webgrp-{safe_id}", Checkbox)
+                if checkbox.value:
+                    web_resource_groups.append(group["name"])
+            except Exception:
+                pass
+
         self.result = {
             "action": "start",
             "permission_mode": permission_mode,
@@ -403,6 +442,7 @@ class LauncherApp(App):
             "session_arg": session_arg,
             "browser_mode": browser_mode,
             "enable_vnc": enable_vnc,
+            "web_resource_groups": web_resource_groups,
         }
         self.exit()
 
@@ -520,6 +560,22 @@ def load_config() -> dict:
     default_browser_mode = user_prefs.get("browser_mode", "none")
     default_enable_vnc = user_prefs.get("enable_vnc", False)
 
+    # Web access filter groups (from agent's web_resources YAML)
+    web_resources_path = os.environ.get("WEB_RESOURCES_PATH", "")
+    web_resource_groups: list[dict] = []
+    if web_resources_path and Path(web_resources_path).exists():
+        try:
+            with open(web_resources_path) as f:
+                web_resources_yaml = yaml.safe_load(f)
+            groups = web_resources_yaml.get("webResourceGroups", {}) or {}
+            for name, urls in groups.items():
+                web_resource_groups.append({"name": name, "urls": list(urls or [])})
+        except (yaml.YAMLError, IOError):
+            pass
+
+    # Default: all groups enabled unless a previous preference was saved
+    default_web_groups = user_prefs.get("web_resource_groups", [g["name"] for g in web_resource_groups])
+
     # Sessions
     sessions_dir = Path(agent_home) / "workspace" / repo_name / ".claude" / "projects"
     sessions = []
@@ -544,6 +600,8 @@ def load_config() -> dict:
         "default_secrets": default_secrets,
         "default_browser_mode": default_browser_mode,
         "default_enable_vnc": default_enable_vnc,
+        "web_resource_groups": web_resource_groups,
+        "default_web_groups": default_web_groups,
         "sessions": sessions,
         "prefs_path": prefs_path,
         "claude_settings_path": claude_settings_path,
@@ -581,8 +639,23 @@ def main() -> int:
                 "secrets": app.result.get("secrets", []),
                 "browser_mode": app.result.get("browser_mode", "none"),
                 "enable_vnc": app.result.get("enable_vnc", False),
+                "web_resource_groups": app.result.get("web_resource_groups", []),
             }
             save_user_preferences(config["prefs_path"], prefs)
+
+            # Write filtered web resources YAML for container bind-mount
+            active_path_str = os.environ.get("ACTIVE_WEB_RESOURCES_PATH", "")
+            if active_path_str and config.get("web_resource_groups"):
+                selected = set(app.result.get("web_resource_groups", []))
+                filtered_groups = {
+                    g["name"]: g["urls"]
+                    for g in config["web_resource_groups"]
+                    if g["name"] in selected
+                }
+                active_path = Path(active_path_str)
+                active_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(active_path, "w") as f:
+                    yaml.dump({"webResourceGroups": filtered_groups}, f, default_flow_style=False, allow_unicode=True)
 
             # Update Claude's ~/.claude.json with MCP server configuration
             # Writes to projects.<container_project_path>.mcpServers (local scope)

@@ -1,0 +1,31 @@
+# Web resource groups for ha_agent — consumed by the Phase 1 WebFetch hook enforcement
+# and by the launcher TUI to configure per-session access.
+#
+# Format: each key under webResourceGroups is a named group containing URL patterns.
+# Pattern syntax:
+#   api.example.com          exact FQDN, any port
+#   api.example.com:8080     exact FQDN + port
+#   *.example.com            any single subdomain, any port
+#   192.168.1.100            exact IPv4, any port
+#   192.168.1.100:8080       exact IPv4 + port
+#
+# Deploy to: /etc/freigang/policies/ha_agent_web_resources.yaml
+# Or place in the repo's policies/ directory for development use.
+
+webResourceGroups:
+  defaultWebResources:
+    - "api.github.com"
+    - "github.com"
+    - "*.githubusercontent.com"
+    - "registry.npmjs.org"
+    - "pypi.org"
+    - "files.pythonhosted.org"
+
+  homeAssistant:
+    - "homeassistant.local"
+    - "homeassistant.local:8123"
+
+  anthropicApi:
+    - "api.anthropic.com"
+    - "claude.ai"
+    - "platform.claude.com"
