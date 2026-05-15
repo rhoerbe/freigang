@@ -107,6 +107,20 @@ case "$BROWSER_MODE" in
         ;;
 esac
 
+# Initialize Claude settings with statusline on first run
+CLAUDE_SETTINGS="/workspace/.claude/settings.json"
+if [[ ! -f "$CLAUDE_SETTINGS" ]]; then
+    mkdir -p "$(dirname "$CLAUDE_SETTINGS")"
+    cat > "$CLAUDE_SETTINGS" <<'EOF'
+{
+  "statusLine": {
+    "type": "command",
+    "command": "bash /usr/local/bin/agent-statusline.sh"
+  }
+}
+EOF
+fi
+
 # Auto-sync repository if configured
 if [[ "$REPO_AUTO_SYNC" == "true" ]]; then
     echo "Auto-syncing repository: $REPO_NAME"
