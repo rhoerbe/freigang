@@ -115,6 +115,10 @@ COPY mcp-config.json /etc/claude/mcp-config.json
 # Can be queried by startup script: podman run --rm $IMAGE cat /etc/freigang/mcp-manifest.json
 COPY mcp-manifest.json /etc/freigang/mcp-manifest.json
 
+# Statusline script for Claude Code TUI
+COPY agent-statusline.sh /usr/local/bin/agent-statusline.sh
+RUN chmod +x /usr/local/bin/agent-statusline.sh
+
 # Entrypoint script
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
