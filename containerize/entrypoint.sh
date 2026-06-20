@@ -1,12 +1,22 @@
 #!/bin/bash
 # Entrypoint script for claude-ha-agent container
-# Native Claude Code auto-updates in the background
+# Claude Code is pinned to the image-installed binary (/usr/local/bin/claude);
+# its self-updater is disabled (DISABLE_AUTOUPDATER=1) so updates only come from
+# rebuilding the image. See the Dockerfile for the rationale.
 # Supports optional Chrome GUI mode with Xvfb/VNC for browser automation
 
 set -e
 
 BROWSER_MODE=${BROWSER_MODE:-none}
 ENABLE_VNC=${ENABLE_VNC:-false}
+
+# Remove any orphaned Claude install left in the bind-mounted home by older images
+# whose self-updater wrote a second copy to $HOME/.local (never on PATH, ~230 MB).
+# Harmless if absent; the image binary at /usr/local/bin/claude is authoritative.
+if [[ -e /workspace/.local/bin/claude || -d /workspace/.local/share/claude ]]; then
+    echo "Removing orphaned Claude install under /workspace/.local"
+    rm -rf /workspace/.local/bin/claude /workspace/.local/share/claude
+fi
 
 start_xvfb() {
     echo "Starting Xvfb on :99"

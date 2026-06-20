@@ -95,9 +95,17 @@ ARG CLAUDE_CACHE_BUST=default
 # Use stable channel for container builds
 # Copy binary to /usr/local/bin (not symlink) so it's accessible with --userns=keep-id
 RUN echo "Claude cache bust: ${CLAUDE_CACHE_BUST}" && \
-    curl -fsSL https://claude.ai/install.sh | bash -s stable \
+    curl -fsSL https://claude.ai/install.sh | bash -s latest \
     && cp /root/.local/bin/claude /usr/local/bin/claude \
     && chmod 755 /usr/local/bin/claude
+
+# Disable Claude Code's background self-updater inside the container.
+# Without this, Claude downloads new versions into $HOME/.local (HOME=/workspace,
+# a host bind mount), creating a SECOND, unused installation: /usr/local/bin/claude
+# stays on PATH while /workspace/.local/bin/claude is never reached. The container
+# image is the single source of truth; updates flow through daily image rebuilds
+# (CLAUDE_CACHE_BUST in build.sh).
+ENV DISABLE_AUTOUPDATER=1
 
 WORKDIR /workspace
 
