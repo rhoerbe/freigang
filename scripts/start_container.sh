@@ -480,6 +480,21 @@ is_secret_selected() {
 
 # Load secrets based on selection (populated after TUI runs, but need defaults for --quick mode)
 load_selected_secrets() {
+    # Anthropic auth - always injected (not user-selectable): without it Claude
+    # Code cannot authenticate and falls back to an interactive /login that is
+    # impossible in the headless container. Use a long-lived token minted with
+    # `claude setup-token` so it is independent of the host session's rotating
+    # OAuth refresh token (see CLAUDE_CODE_OAUTH_TOKEN below).
+    CLAUDE_OAUTH_TOKEN=""
+    if [[ -f "$AGENT_HOME/workspace/.secrets/claude_oauth_token" ]]; then
+        CLAUDE_OAUTH_TOKEN=$(cat "$AGENT_HOME/workspace/.secrets/claude_oauth_token")
+    else
+        echo "WARNING: $AGENT_HOME/workspace/.secrets/claude_oauth_token not found." >&2
+        echo "         Claude will likely 401 and prompt for /login. Create it with:" >&2
+        echo "           claude setup-token   # on the host, then:" >&2
+        echo "           install -m600 /dev/stdin $AGENT_HOME/workspace/.secrets/claude_oauth_token <<<'<token>'" >&2
+    fi
+
     # Selectable secrets - only loaded if selected in TUI
     GH_TOKEN=""
     HA_ACCESS_TOKEN=""
@@ -548,6 +563,7 @@ if [[ $# -gt 0 && "$1" != "--"* ]]; then
         -e HTTPS_PROXY=http://host.containers.internal:8888 \
         -e NO_PROXY="api.anthropic.com,claude.ai,platform.claude.com,anthropic.com" \
         -e HOME=/workspace \
+        -e CLAUDE_CODE_OAUTH_TOKEN="$CLAUDE_OAUTH_TOKEN" \
         -e BROWSER_MODE="$SELECTED_BROWSER_MODE" \
         -e ENABLE_VNC="$SELECTED_ENABLE_VNC" \
         -e GH_TOKEN="$GH_TOKEN" \
@@ -681,6 +697,7 @@ exec podman --cgroup-manager=cgroupfs run --rm -it \
     -e HTTPS_PROXY=http://host.containers.internal:8888 \
     -e NO_PROXY="api.anthropic.com,claude.ai,platform.claude.com,anthropic.com" \
     -e HOME=/workspace \
+    -e CLAUDE_CODE_OAUTH_TOKEN="$CLAUDE_OAUTH_TOKEN" \
     -e BROWSER_MODE="$SELECTED_BROWSER_MODE" \
     -e ENABLE_VNC="$SELECTED_ENABLE_VNC" \
     -e REPO_AUTO_SYNC="${REPO_AUTO_SYNC:-false}" \

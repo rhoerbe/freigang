@@ -18,6 +18,7 @@ You are running in an isolated container with restricted network access.
 - **mosquitto_sub** / **mosquitto_pub** - MQTT client tools for debugging brokers
 
 ### Credentials (environment variables)
+- `CLAUDE_CODE_OAUTH_TOKEN` - Long-lived Anthropic OAuth token (from `claude setup-token`) for Claude authentication; injected at launch so no interactive `/login` is needed
 - `GH_TOKEN` - GitHub personal access token for repo rhoerbe/hadmin
 - `HA_ACCESS_TOKEN` - Home Assistant long-lived access token
 - `MQTT_USER` - MQTT broker username
