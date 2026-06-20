@@ -1,8 +1,9 @@
 #!/bin/bash
 # Entrypoint script for claude-ha-agent container
-# Claude Code is pinned to the image-installed binary (/usr/local/bin/claude);
-# its self-updater is disabled (DISABLE_AUTOUPDATER=1) so updates only come from
-# rebuilding the image. See the Dockerfile for the rationale.
+# Claude Code is shipped in the image (/usr/local/share/claude-native) and seeded
+# into the user's $HOME/.local on start as a proper native installation. Its
+# self-updater is disabled (DISABLE_AUTOUPDATER=1) so updates only come from
+# rebuilding the image. See the Dockerfile and seed_claude_install() for rationale.
 # Supports optional Chrome GUI mode with Xvfb/VNC for browser automation
 
 set -e
@@ -10,13 +11,49 @@ set -e
 BROWSER_MODE=${BROWSER_MODE:-none}
 ENABLE_VNC=${ENABLE_VNC:-false}
 
-# Remove any orphaned Claude install left in the bind-mounted home by older images
-# whose self-updater wrote a second copy to $HOME/.local (never on PATH, ~230 MB).
-# Harmless if absent; the image binary at /usr/local/bin/claude is authoritative.
-if [[ -e /workspace/.local/bin/claude || -d /workspace/.local/share/claude ]]; then
-    echo "Removing orphaned Claude install under /workspace/.local"
-    rm -rf /workspace/.local/bin/claude /workspace/.local/share/claude
-fi
+seed_claude_install() {
+    # Materialize a single, proper native Claude Code installation in $HOME/.local.
+    #
+    # $HOME (/workspace) is a host bind mount the image cannot pre-populate, so we
+    # copy the image-staged native build into it on start. This yields exactly one
+    # installation that `claude doctor` recognizes as native (binary under
+    # ~/.local/share/claude/versions, symlinked from ~/.local/bin/claude, with
+    # installMethod recorded in ~/.claude.json). Fully offline - no download.
+    local stage=/usr/local/share/claude-native
+    [[ -d "$stage/versions" ]] || return 0
+
+    local ver
+    ver=$(ls "$stage/versions" | sort -V | tail -1)
+    [[ -n "$ver" ]] || return 0
+
+    local dest="$HOME/.local/share/claude/versions/$ver"
+    if [[ ! -f "$dest" ]]; then
+        echo "Seeding Claude $ver into $HOME/.local"
+        mkdir -p "$HOME/.local/bin" "$HOME/.local/share/claude/versions"
+        # Drop versions left by a previous (older) image so only the current remains
+        rm -rf "${HOME:?}/.local/share/claude/versions"/*
+        cp -a "$stage/versions/$ver" "$dest"
+    fi
+    ln -sfn "$dest" "$HOME/.local/bin/claude"
+
+    # Record install method so `claude doctor` recognizes the native install and
+    # does not flag the binary as an unmanaged/leftover global installation.
+    local cj="$HOME/.claude.json"
+    [[ -f "$cj" ]] || echo "{}" > "$cj"
+    local tmp
+    tmp=$(mktemp)
+    if jq '.installMethod = "native" | .autoUpdatesProtectedForNative = true' "$cj" > "$tmp" 2>/dev/null; then
+        mv "$tmp" "$cj"
+    else
+        rm -f "$tmp"
+    fi
+}
+
+# Seed only for invocations that actually use Claude (the agent or a shell),
+# not for lightweight image queries like `cat /etc/freigang/mcp-manifest.json`.
+case "$(basename "${1:-claude}")" in
+    claude|bash|sh) seed_claude_install ;;
+esac
 
 start_xvfb() {
     echo "Starting Xvfb on :99"
