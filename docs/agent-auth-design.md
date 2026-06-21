@@ -131,19 +131,19 @@ refuse to launch — loudly — unless **all** hold:
   claude remote-control`.
 - Fix `AGENT_ACCESS.md`: the `CLAUDE_CODE_OAUTH_TOKEN` line should describe a `setup-token`
   (it currently does, but the implementation must match it).
-- Note the RC ≥ 2.1.51 requirement; update rainova from 2.1.30.
+- Note the RC ≥ 2.1.51 requirement (applies to Tier-2 only).
 
 ## Open questions / tests still to run
 
-1. **One token, many machines, concurrently?** Does a single `setup-token` authenticate the
-   container *and* a VM at the same time, or is one token-per-machine needed? (Decides
-   whether "single subscription, many agents" is one secret or many.)
+1. ✅ **One token, many machines, concurrently — VERIFIED** (2026-06-21, #32): a single
+   `CLAUDE_CODE_OAUTH_TOKEN` authenticated ray (2.1.176) and riva (2.1.185) with overlapping
+   `claude -p` calls — both exit 0, no 401. → baseline is **one shared setup-token** for the
+   fleet, not one per agent. Quota stays shared (see #4).
 2. **Does minting a new `setup-token` revoke a prior one?** (Verified: it does **not**
    invalidate the interactive `/login` session.)
 3. **rainova cross-machine kill** — when `/login` on riva apparently invalidated rainova:
    shared credential file, or an account-level grant cap? (Local evidence shows ≥2 `/login`
-   grants — r2h2 + ha_agent — coexisting, so a hard "1 device" cap is unlikely. rainova was
-   also below the RC version floor.)
+   grants — r2h2 + ha_agent — coexisting, so a hard "1 device" cap is unlikely.)
 4. **Pro quota** sufficiency for N concurrent agents; Max if not. (Parked tier decision.)
 5. **ray loose end:** `claude` is not installed for `agent` or `r2h2` on 10.2.2.50 — confirm
    which user/path ran the interactive `claude` that showed the onboarding picker.
