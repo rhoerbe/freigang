@@ -91,13 +91,29 @@ RUN npm install -g @playwright/mcp && npx playwright install chromium chrome
 # Cache bust argument - pass --build-arg CLAUDE_CACHE_BUST=$(date +%Y-%m-%d) to force daily updates
 ARG CLAUDE_CACHE_BUST=default
 
-# Claude Code - native installation (installs to /root/.local/bin/claude)
-# Use stable channel for container builds
-# Copy binary to /usr/local/bin (not symlink) so it's accessible with --userns=keep-id
+# Claude Code - native build, staged for runtime seeding.
+# The installer drops a native install in /root/.local; we relocate just the
+# version binary to a world-readable image path. At runtime entrypoint.sh
+# materializes a proper native install in the user's $HOME/.local (a host bind
+# mount the image cannot pre-populate). We deliberately do NOT place a binary in
+# /usr/local/bin: a bare claude in npm's global prefix makes `claude doctor`
+# report a "leftover npm global installation" and miss the native install.
 RUN echo "Claude cache bust: ${CLAUDE_CACHE_BUST}" && \
-    curl -fsSL https://claude.ai/install.sh | bash -s stable \
-    && cp /root/.local/bin/claude /usr/local/bin/claude \
-    && chmod 755 /usr/local/bin/claude
+    curl -fsSL https://claude.ai/install.sh | bash -s latest \
+    && mkdir -p /usr/local/share/claude-native \
+    && cp -a /root/.local/share/claude/versions /usr/local/share/claude-native/ \
+    && chmod -R a+rX /usr/local/share/claude-native \
+    && rm -rf /root/.local
+
+# Disable Claude Code's background self-updater inside the container.
+# Without this, Claude downloads new versions into $HOME/.local and, combined
+# with a stale binary elsewhere on PATH, ends up with two installations. The
+# image is the single source of truth; updates flow through image rebuilds
+# (CLAUDE_CACHE_BUST in build.sh).
+ENV DISABLE_AUTOUPDATER=1
+
+# Put the seeded native install ($HOME/.local/bin, HOME=/workspace) first on PATH.
+ENV PATH="/workspace/.local/bin:${PATH}"
 
 WORKDIR /workspace
 
@@ -114,6 +130,10 @@ COPY mcp-config.json /etc/claude/mcp-config.json
 # MCP manifest - lists available MCP servers in this container image
 # Can be queried by startup script: podman run --rm $IMAGE cat /etc/freigang/mcp-manifest.json
 COPY mcp-manifest.json /etc/freigang/mcp-manifest.json
+
+# Statusline script for Claude Code TUI
+COPY agent-statusline.sh /usr/local/bin/agent-statusline.sh
+RUN chmod +x /usr/local/bin/agent-statusline.sh
 
 # Entrypoint script
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
