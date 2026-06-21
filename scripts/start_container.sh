@@ -24,6 +24,12 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Deploy provenance — rewritten by deploy.sh when the script is copied to an
+# agent home. Running from the source tree leaves the sentinels in place. Shown
+# at launch so a stale deployment (root cause of issue #30) is visible, not silent.
+DEPLOYED_COMMIT="__DEPLOYED_COMMIT__"
+DEPLOYED_AT="__DEPLOYED_AT__"
+
 # ============================================================================
 # Agent Selection Functions
 # ============================================================================
@@ -134,6 +140,16 @@ validate_agent_user() {
     fi
 }
 
+show_deploy_provenance() {
+    # Make deployment staleness visible (issue #30: the agent silently ran a
+    # months-old deployed copy). deploy.sh stamps the commit/date into the copy.
+    if [[ "$DEPLOYED_COMMIT" == "__DEPLOYED_COMMIT__" ]]; then
+        echo "start_container.sh: running from source tree (not a deployed copy)"
+    else
+        echo "start_container.sh: deployed from commit $DEPLOYED_COMMIT on $DEPLOYED_AT"
+    fi
+}
+
 # ============================================================================
 # Main Initialization
 # ============================================================================
@@ -183,6 +199,8 @@ else
         exec sudo -iu "$AGENT_USER" "$AGENT_HOME/start_container.sh" "$@"
     fi
 fi
+
+show_deploy_provenance
 
 # Derive web access filter paths (set after agent config is loaded)
 WEB_RESOURCES_PATH=""
@@ -478,22 +496,69 @@ is_secret_selected() {
     return 1
 }
 
+# Preflight the injected Anthropic token so a dead/expired credential fails loudly
+# here, instead of dropping the agent at an interactive /login it cannot complete
+# (issue #30). Best-effort: only fully validated when the host has the claude CLI.
+validate_claude_token() {
+    [[ -z "$CLAUDE_OAUTH_TOKEN" ]] && return 0   # missing token already warned about
+    if [[ "$CLAUDE_OAUTH_TOKEN" != sk-ant-* ]]; then
+        echo "WARNING: Anthropic token has an unexpected format (expected 'sk-ant-…')." >&2
+    fi
+    if [[ "${SKIP_AUTH_PROBE:-0}" == "1" ]]; then
+        echo "Anthropic auth: live probe skipped (SKIP_AUTH_PROBE=1)."
+        return 0
+    fi
+    # Live probe: `claude auth status` only reports a token is *present*, not that
+    # it works (a bogus token still shows loggedIn:true). A one-shot `claude -p`
+    # is the only real validator - it 401s on a dead/expired token. Skips when the
+    # host lacks the claude CLI (the container then validates at first call).
+    if command -v claude >/dev/null 2>&1; then
+        local tmpcfg out
+        tmpcfg=$(mktemp -d)
+        if out=$(CLAUDE_CODE_OAUTH_TOKEN="$CLAUDE_OAUTH_TOKEN" CLAUDE_CONFIG_DIR="$tmpcfg" \
+                 timeout 30 claude -p "reply with: OK" 2>&1); then
+            rm -rf "$tmpcfg"
+            echo "Anthropic auth: token validated (live inference probe)."
+        else
+            rm -rf "$tmpcfg"
+            echo "ERROR: Anthropic token failed a live auth probe:" >&2
+            echo "       ${out:-<no output>}" >&2
+            echo "       Refusing to launch with a dead credential. Mint a fresh one:" >&2
+            echo "         claude setup-token   (set SKIP_AUTH_PROBE=1 to bypass this check)" >&2
+            exit 1
+        fi
+    else
+        echo "Anthropic auth: token loaded; validation deferred ('claude' not on host PATH)."
+    fi
+}
+
 # Load secrets based on selection (populated after TUI runs, but need defaults for --quick mode)
 load_selected_secrets() {
-    # Anthropic auth - always injected (not user-selectable): without it Claude
-    # Code cannot authenticate and falls back to an interactive /login that is
-    # impossible in the headless container. Use a long-lived token minted with
-    # `claude setup-token` so it is independent of the host session's rotating
-    # OAuth refresh token (see CLAUDE_CODE_OAUTH_TOKEN below).
+    # Anthropic auth (Tier-1 baseline) - always injected, not user-selectable.
+    # Without a credential Claude Code falls back to interactive /login, which is
+    # impossible in the headless container. Inject a long-lived token minted with
+    # `claude setup-token` (CLAUDE_CODE_OAUTH_TOKEN): ~1y, no refresh rotation, so
+    # it is idle-proof - unlike a copied /login access token, which dies in ~8h.
+    # This token is inference-only and cannot do Remote Control; for that use the
+    # in-container `claude-rc` helper (Tier-2), which unsets this var first.
     CLAUDE_OAUTH_TOKEN=""
-    if [[ -f "$AGENT_HOME/workspace/.secrets/claude_oauth_token" ]]; then
-        CLAUDE_OAUTH_TOKEN=$(cat "$AGENT_HOME/workspace/.secrets/claude_oauth_token")
+    local setup_token="$AGENT_HOME/workspace/.secrets/claude_setup_token"
+    local legacy_token="$AGENT_HOME/workspace/.secrets/claude_oauth_token"
+    if [[ -f "$setup_token" ]]; then
+        CLAUDE_OAUTH_TOKEN=$(cat "$setup_token")
+    elif [[ -f "$legacy_token" ]]; then
+        CLAUDE_OAUTH_TOKEN=$(cat "$legacy_token")
+        echo "WARNING: using legacy secret $legacy_token - this is likely a short-lived" >&2
+        echo "         access token (deprecated sync_oauth_token.sh) that 401s in ~8h." >&2
+        echo "         Replace it with a durable token:  claude setup-token  then" >&2
+        echo "         install -m600 /dev/stdin $setup_token <<<'<token>'" >&2
     else
-        echo "WARNING: $AGENT_HOME/workspace/.secrets/claude_oauth_token not found." >&2
-        echo "         Claude will likely 401 and prompt for /login. Create it with:" >&2
+        echo "WARNING: no Anthropic token found at $setup_token" >&2
+        echo "         Claude will 401 and prompt for /login. Create it with:" >&2
         echo "           claude setup-token   # on the host, then:" >&2
-        echo "           install -m600 /dev/stdin $AGENT_HOME/workspace/.secrets/claude_oauth_token <<<'<token>'" >&2
+        echo "           install -m600 /dev/stdin $setup_token <<<'<token>'" >&2
     fi
+    validate_claude_token
 
     # Selectable secrets - only loaded if selected in TUI
     GH_TOKEN=""

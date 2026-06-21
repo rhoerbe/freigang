@@ -1,0 +1,22 @@
+#!/bin/bash
+# Tier-2: occasional Remote Control from inside the agent container.
+#
+# Remote Control needs a *full-scope* claude.ai /login session token. The
+# baseline CLAUDE_CODE_OAUTH_TOKEN (a setup-token) is inference-only and, being
+# higher in Claude Code's auth precedence, shadows any /login. So unset it, log
+# in with a full-scope token (one-time; uses the paste-the-code flow in a
+# headless container), then start Remote Control.
+#
+# See docs/agent-auth-design.md (Tier 2). Requires Claude Code >= 2.1.51.
+set -euo pipefail
+
+unset CLAUDE_CODE_OAUTH_TOKEN
+
+if ! claude auth status 2>/dev/null | grep -q '"loggedIn": *true'; then
+    echo "No full-scope session yet - starting login."
+    echo "If the browser can't reach the callback (normal in a container), paste"
+    echo "the code shown in the browser back into this terminal when prompted."
+    claude auth login
+fi
+
+exec claude remote-control "$@"

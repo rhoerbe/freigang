@@ -18,7 +18,7 @@ You are running in an isolated container with restricted network access.
 - **mosquitto_sub** / **mosquitto_pub** - MQTT client tools for debugging brokers
 
 ### Credentials (environment variables)
-- `CLAUDE_CODE_OAUTH_TOKEN` - Long-lived Anthropic OAuth token (from `claude setup-token`) for Claude authentication; injected at launch so no interactive `/login` is needed
+- `CLAUDE_CODE_OAUTH_TOKEN` - Long-lived Anthropic OAuth token from `claude setup-token` (secret `.secrets/claude_setup_token`), injected at launch so no interactive `/login` is needed. Inference-only: it cannot establish Remote Control. For occasional Remote Control, run `claude-rc` inside the container (Tier-2) - it unsets this token and does a full-scope `claude auth login` first. See [docs/agent-auth-design.md](docs/agent-auth-design.md).
 - `GH_TOKEN` - GitHub personal access token for repo rhoerbe/hadmin
 - `HA_ACCESS_TOKEN` - Home Assistant long-lived access token
 - `MQTT_USER` - MQTT broker username

@@ -8,10 +8,20 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 AGENT_USER="ha_agent"
 AGENT_HOME="/home/$AGENT_USER"
 
-echo "Deploying scripts to $AGENT_HOME..."
+# Deploy provenance stamped into the deployed scripts (issue #30: a stale deploy
+# silently ran for months). Surfaced by start_container.sh at launch.
+COMMIT="$(git -C "$REPO_ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+git -C "$REPO_ROOT" diff --quiet 2>/dev/null || COMMIT="${COMMIT}-dirty"
+DEPLOY_STAMP="$(date '+%Y-%m-%d %H:%M:%S')"
+
+echo "Deploying scripts to $AGENT_HOME (version $COMMIT)..."
 
 # Scripts from scripts/
 sudo cp "$SCRIPT_DIR/start_container.sh" "$AGENT_HOME/"
+sudo sed -i \
+    -e "s|__DEPLOYED_COMMIT__|$COMMIT|g" \
+    -e "s|__DEPLOYED_AT__|$DEPLOY_STAMP|g" \
+    "$AGENT_HOME/start_container.sh"
 sudo cp "$SCRIPT_DIR/config.sh" "$AGENT_HOME/"
 sudo cp "$SCRIPT_DIR/launcher_tui.py" "$AGENT_HOME/"
 

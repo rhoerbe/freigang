@@ -1,16 +1,15 @@
 #!/bin/bash
-# Short-term bridge for container Claude auth (see issue #30).
+# DEPRECATED emergency bridge (see issue #30 and docs/agent-auth-design.md).
 #
-# `claude setup-token` (the durable long-lived token minter) is currently broken
-# against Anthropic's new OAuth endpoints. As a stopgap, copy the *host* user's
-# current Claude access token into the agent secret that start_container.sh
-# injects as CLAUDE_CODE_OAUTH_TOKEN.
-#
-# Run this as the logged-in host user (the one with a working /login) BEFORE
-# launching the container. The access token is valid until its expiry (a few
-# hours) regardless of the host session's refresh-token rotation, so re-run this
-# whenever the container starts failing with 401. Replace with setup-token once
-# that flow works again.
+# Prefer `claude setup-token`, which mints a durable (~1y) token and works on the
+# current CLI - it was only briefly broken in Feb 2026. This script instead
+# copies the host user's short-lived /login *access token* into the agent secret
+# that start_container.sh injects as CLAUDE_CODE_OAUTH_TOKEN. That access token:
+#   * expires in ~8h, so you must re-run this whenever the container 401s, and
+#   * is inference-only when delivered via env var - it can NEVER do Remote
+#     Control (which needs a full-scope /login; see claude-rc / Tier-2).
+# Use only as a last resort when you cannot mint a setup-token. It writes the
+# legacy secret name, which start_container.sh accepts with a warning.
 set -euo pipefail
 
 SRC="${CLAUDE_CREDENTIALS:-$HOME/.claude/.credentials.json}"

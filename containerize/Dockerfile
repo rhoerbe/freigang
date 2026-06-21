@@ -119,5 +119,9 @@ COPY mcp-manifest.json /etc/freigang/mcp-manifest.json
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
+# Tier-2 Remote Control helper (see docs/agent-auth-design.md)
+COPY claude-rc /usr/local/bin/claude-rc
+RUN chmod +x /usr/local/bin/claude-rc
+
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["claude"]
