@@ -4,9 +4,10 @@
 #
 # Usage:
 #   start-ha-agent              # start Claude Code with TUI
-#   start-ha-agent --quick      # start Claude Code without TUI (use defaults)
-#   start-ha-agent --test       # run preflight and network connectivity tests
-#   start-ha-agent bash         # start bash shell
+#   start-ha-agent --quick         # start Claude Code without TUI (use defaults)
+#   start-ha-agent --validate-auth # skip TUI; run an in-container auth diagnostic and exit
+#   start-ha-agent --test          # run preflight and network connectivity tests
+#   start-ha-agent bash            # start bash shell
 #
 # MCP Server Configuration Flow (local scope - per project):
 #   1. Container has MCP manifest at /etc/freigang/mcp-manifest.json (installed servers)
@@ -240,12 +241,22 @@ SELECTED_BROWSER_MODE="none"
 SELECTED_ENABLE_VNC="false"
 SELECTED_WEB_RESOURCE_GROUPS=""
 SKIP_TUI=false
+VALIDATE_AUTH=false   # --validate-auth: skip TUI, run an in-container auth diagnostic
 
 # Parse initial arguments
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --quick)
             SKIP_TUI=true
+            shift
+            ;;
+        --validate-auth)
+            # Skip TUI, start with defaults, run an auth diagnostic in the
+            # container, then exit (no interactive claude). Skips the host-side
+            # probe so the in-container check always runs. See issue #30.
+            VALIDATE_AUTH=true
+            SKIP_TUI=true
+            export SKIP_AUTH_PROBE=1
             shift
             ;;
         --browser=*)
@@ -746,8 +757,34 @@ elif [[ -n "$AGENT_ID" && -n "$WEB_RESOURCES_PATH" && -f "$WEB_RESOURCES_PATH" ]
     WEB_RESOURCES_MOUNT="-v $WEB_RESOURCES_PATH:/etc/freigang/policies/${AGENT_ID}_web_resources.yaml:Z,ro"
 fi
 
-# Start container with Claude
-exec podman --cgroup-manager=cgroupfs run --rm -it \
+# Container command: normal interactive claude, or (--validate-auth) a one-shot
+# auth diagnostic that prints the injected token state and probes auth, then exits.
+TTY_FLAGS="-it"
+if [[ "$VALIDATE_AUTH" == true ]]; then
+    TTY_FLAGS="-i"
+    CONTAINER_CMD=(bash -c '
+export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
+echo "=== container auth diagnostic ==="
+echo "HOME=$HOME"
+echo "claude: $(command -v claude || echo NOT-FOUND)"
+if [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
+    echo "CLAUDE_CODE_OAUTH_TOKEN: set len=${#CLAUDE_CODE_OAUTH_TOKEN} prefix=$(printf %s "$CLAUDE_CODE_OAUTH_TOKEN" | cut -c1-13)"
+else
+    echo "CLAUDE_CODE_OAUTH_TOKEN: EMPTY (nothing injected)"
+fi
+echo "ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:+set}"
+echo "-- persisted /login creds (would override an empty token) --"
+ls -la "$HOME/.claude/.credentials.json" 2>/dev/null || echo "(none)"
+echo "-- claude --version --"; claude --version
+echo "-- claude auth status --"; claude auth status 2>&1 | head
+echo "-- claude -p live probe --"; claude -p "reply with: OK" 2>&1 | head
+')
+else
+    CONTAINER_CMD=(claude $CLAUDE_ARGS)
+fi
+
+# Start container
+exec podman --cgroup-manager=cgroupfs run --rm $TTY_FLAGS \
     --name "$CONTAINER_NAME" \
     --userns=keep-id \
     --shm-size=2g \
@@ -772,4 +809,4 @@ exec podman --cgroup-manager=cgroupfs run --rm -it \
     -e MQTT_USER="$MQTT_USER" \
     -e MQTT_PASS="$MQTT_PASS" \
     "$CONTAINER_NAME" \
-    claude $CLAUDE_ARGS
+    "${CONTAINER_CMD[@]}"
