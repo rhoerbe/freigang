@@ -160,8 +160,12 @@ refuse to launch — loudly — unless **all** hold:
    `CLAUDE_CODE_OAUTH_TOKEN` authenticated ray (2.1.176) and riva (2.1.185) with overlapping
    `claude -p` calls — both exit 0, no 401. → baseline is **one shared setup-token** for the
    fleet, not one per agent. Quota stays shared (see #4).
-2. **Does minting a new `setup-token` revoke a prior one?** (Verified: it does **not**
-   invalidate the interactive `/login` session.)
+2. ✅ **Minting a new `setup-token` does NOT revoke prior ones — VERIFIED** (2026-06-22, #33):
+   minted token B while token A was active; both still authenticate (`claude -p`, exit 0)
+   afterward, and minting also does not invalidate the interactive `/login` session. →
+   setup-tokens **coexist** — the fleet can share one (#32) or use per-agent tokens, and
+   re-minting anywhere does not break existing agents. (Also confirmed token A is a durable
+   setup-token: valid a day later on a bare env var with no refresh path.)
 3. **rainova cross-machine kill** — when `/login` on riva apparently invalidated rainova:
    shared credential file, or an account-level grant cap? (Local evidence shows ≥2 `/login`
    grants — r2h2 + ha_agent — coexisting, so a hard "1 device" cap is unlikely.)
