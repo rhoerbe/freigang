@@ -91,6 +91,26 @@ condition — `claude setup-token` works on 2.1.185.
 Also found: `.secrets/anthropic_api_key` is a 26-char `oauth-via-…` placeholder, not a real
 Console key.
 
+### Follow-up (2026-06-22): the missing-secret 401, and closing the validation gap
+
+After deploying the corrected launcher the container *still* 401'd. Cause:
+`.secrets/claude_setup_token` was never created, so the launcher fell back to the **stale
+legacy `.secrets/claude_oauth_token`** (a dead access token). Two fixes baked back in:
+
+- **Host-side validation was blind here.** `validate_claude_token` runs a live `claude -p`
+  probe, but the agent *host* has no `claude` (only the container image does), so it
+  reported "deferred" and the dead token reached the TUI. Now, when the host lacks `claude`,
+  the preflight probes **inside a throwaway container** (workspace mounted, mirroring the
+  real run's network/proxy). Only a *definitive* auth failure (401 / "invalid … credentials")
+  blocks launch; a network/other error just warns, to avoid false negatives.
+- **`--validate-auth`** is the reliable manual check: skips the TUI, runs an in-container
+  diagnostic (token presence, `claude auth status`, live `claude -p`), then exits.
+
+Verified 2026-06-22: a bogus token aborts the launch with exit 1 **before** the TUI; a valid
+token reports `oauth_token` and `claude -p → OK`. Also fixed a `deploy.sh` bug where the
+global `sed` rewrote the provenance sentinel in *two* places (variable + comparison),
+defeating drift detection — now it replaces only the anchored assignment lines.
+
 ## Per-environment plan
 
 | Environment | Mode | Baseline auth | Notes |
@@ -118,7 +138,8 @@ refuse to launch — loudly — unless **all** hold:
    auth status` only reports a token is *present* — a bogus token still shows
    `loggedIn:true` — so a real inference call (which 401s on a dead token) is the only
    reliable validator. (Implemented as `validate_claude_token` with a `SKIP_AUTH_PROBE=1`
-   opt-out.)
+   opt-out.) When the agent host has no `claude`, the probe runs inside a throwaway
+   container; `--validate-auth` runs the same check manually in-container.
 
 ## PR #31 — required corrections
 

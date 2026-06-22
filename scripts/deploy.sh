@@ -18,9 +18,11 @@ echo "Deploying scripts to $AGENT_HOME (version $COMMIT)..."
 
 # Scripts from scripts/
 sudo cp "$SCRIPT_DIR/start_container.sh" "$AGENT_HOME/"
+# Replace only the assignment lines (anchored) - a global match would also rewrite
+# the sentinel in show_deploy_provenance's comparison and defeat drift detection.
 sudo sed -i \
-    -e "s|__DEPLOYED_COMMIT__|$COMMIT|g" \
-    -e "s|__DEPLOYED_AT__|$DEPLOY_STAMP|g" \
+    -e "s|^DEPLOYED_COMMIT=.*|DEPLOYED_COMMIT=\"$COMMIT\"|" \
+    -e "s|^DEPLOYED_AT=.*|DEPLOYED_AT=\"$DEPLOY_STAMP\"|" \
     "$AGENT_HOME/start_container.sh"
 sudo cp "$SCRIPT_DIR/config.sh" "$AGENT_HOME/"
 sudo cp "$SCRIPT_DIR/launcher_tui.py" "$AGENT_HOME/"

@@ -521,26 +521,48 @@ validate_claude_token() {
     fi
     # Live probe: `claude auth status` only reports a token is *present*, not that
     # it works (a bogus token still shows loggedIn:true). A one-shot `claude -p`
-    # is the only real validator - it 401s on a dead/expired token. Skips when the
-    # host lacks the claude CLI (the container then validates at first call).
+    # is the only real validator - it 401s on a dead/expired token. Prefer the host
+    # CLI; if the agent host has no claude (common - only the container image does),
+    # probe inside a throwaway container that mirrors the real run's network/proxy.
+    # Only a *definitive* auth failure blocks launch; a network/other error warns,
+    # to avoid false negatives.
+    local out rc=0
     if command -v claude >/dev/null 2>&1; then
-        local tmpcfg out
-        tmpcfg=$(mktemp -d)
+        local tmpcfg; tmpcfg=$(mktemp -d)
         if out=$(CLAUDE_CODE_OAUTH_TOKEN="$CLAUDE_OAUTH_TOKEN" CLAUDE_CONFIG_DIR="$tmpcfg" \
-                 timeout 30 claude -p "reply with: OK" 2>&1); then
-            rm -rf "$tmpcfg"
-            echo "Anthropic auth: token validated (live inference probe)."
-        else
-            rm -rf "$tmpcfg"
-            echo "ERROR: Anthropic token failed a live auth probe:" >&2
-            echo "       ${out:-<no output>}" >&2
-            echo "       Refusing to launch with a dead credential. Mint a fresh one:" >&2
-            echo "         claude setup-token   (set SKIP_AUTH_PROBE=1 to bypass this check)" >&2
-            exit 1
-        fi
+                 timeout 30 claude -p "reply with: OK" 2>&1); then rc=0; else rc=$?; fi
+        rm -rf "$tmpcfg"
+    elif command -v podman >/dev/null 2>&1 && podman image exists "$CONTAINER_NAME" 2>/dev/null; then
+        echo "Anthropic auth: validating via container image $CONTAINER_NAME (no host claude)…"
+        if out=$(podman --cgroup-manager=cgroupfs run --rm \
+                    --userns=keep-id --network=ha-agent-net \
+                    -v "$AGENT_HOME/workspace":/workspace:Z \
+                    -e HTTP_PROXY=http://host.containers.internal:8888 \
+                    -e HTTPS_PROXY=http://host.containers.internal:8888 \
+                    -e NO_PROXY="api.anthropic.com,claude.ai,platform.claude.com,anthropic.com" \
+                    -e HOME=/workspace \
+                    -e CLAUDE_CODE_OAUTH_TOKEN="$CLAUDE_OAUTH_TOKEN" \
+                    "$CONTAINER_NAME" \
+                    bash -c 'export PATH=/usr/local/bin:/usr/bin:/bin:$PATH; claude -p "reply with: OK"' 2>&1)
+        then rc=0; else rc=$?; fi
     else
-        echo "Anthropic auth: token loaded; validation deferred ('claude' not on host PATH)."
+        echo "Anthropic auth: token loaded; validation skipped (no host claude, no podman/image)." >&2
+        return 0
     fi
+
+    if [[ $rc -eq 0 ]]; then
+        echo "Anthropic auth: token validated (live probe)."
+        return 0
+    fi
+    if grep -qiE '401|invalid (bearer|authentication|api)|not logged in|please run /login' <<<"$out"; then
+        echo "ERROR: Anthropic token failed authentication - refusing to launch:" >&2
+        echo "       ${out:-<no output>}" >&2
+        echo "       Mint a fresh token:  claude setup-token   (or SKIP_AUTH_PROBE=1 to bypass)" >&2
+        exit 1
+    fi
+    echo "WARNING: could not validate the token (looks like a network/other error, not an" >&2
+    echo "         auth failure); proceeding. Output: ${out:-<none>}" >&2
+    return 0
 }
 
 # Load secrets based on selection (populated after TUI runs, but need defaults for --quick mode)
