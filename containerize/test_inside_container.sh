@@ -4,6 +4,7 @@ set -e
 
 echo "=== Environment ==="
 echo "HOME=$HOME"
+echo "CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:+set (${#CLAUDE_CODE_OAUTH_TOKEN} chars)}"
 echo "ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:+set (${#ANTHROPIC_API_KEY} chars)}"
 echo "GH_TOKEN=${GH_TOKEN:+set (${#GH_TOKEN} chars)}"
 echo "HTTP_PROXY=$HTTP_PROXY"

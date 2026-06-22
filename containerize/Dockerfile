@@ -139,5 +139,9 @@ RUN chmod +x /usr/local/bin/agent-statusline.sh
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
+# Tier-2 Remote Control helper (see docs/agent-auth-design.md)
+COPY claude-rc /usr/local/bin/claude-rc
+RUN chmod +x /usr/local/bin/claude-rc
+
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["claude"]

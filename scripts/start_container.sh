@@ -4,9 +4,10 @@
 #
 # Usage:
 #   start-ha-agent              # start Claude Code with TUI
-#   start-ha-agent --quick      # start Claude Code without TUI (use defaults)
-#   start-ha-agent --test       # run preflight and network connectivity tests
-#   start-ha-agent bash         # start bash shell
+#   start-ha-agent --quick         # start Claude Code without TUI (use defaults)
+#   start-ha-agent --validate-auth # skip TUI; run an in-container auth diagnostic and exit
+#   start-ha-agent --test          # run preflight and network connectivity tests
+#   start-ha-agent bash            # start bash shell
 #
 # MCP Server Configuration Flow (local scope - per project):
 #   1. Container has MCP manifest at /etc/freigang/mcp-manifest.json (installed servers)
@@ -23,6 +24,12 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Deploy provenance — rewritten by deploy.sh when the script is copied to an
+# agent home. Running from the source tree leaves the sentinels in place. Shown
+# at launch so a stale deployment (root cause of issue #30) is visible, not silent.
+DEPLOYED_COMMIT="__DEPLOYED_COMMIT__"
+DEPLOYED_AT="__DEPLOYED_AT__"
 
 # ============================================================================
 # Agent Selection Functions
@@ -134,6 +141,16 @@ validate_agent_user() {
     fi
 }
 
+show_deploy_provenance() {
+    # Make deployment staleness visible (issue #30: the agent silently ran a
+    # months-old deployed copy). deploy.sh stamps the commit/date into the copy.
+    if [[ "$DEPLOYED_COMMIT" == "__DEPLOYED_COMMIT__" ]]; then
+        echo "start_container.sh: running from source tree (not a deployed copy)"
+    else
+        echo "start_container.sh: deployed from commit $DEPLOYED_COMMIT on $DEPLOYED_AT"
+    fi
+}
+
 # ============================================================================
 # Main Initialization
 # ============================================================================
@@ -184,6 +201,8 @@ else
     fi
 fi
 
+show_deploy_provenance
+
 # Derive web access filter paths (set after agent config is loaded)
 WEB_RESOURCES_PATH=""
 ACTIVE_WEB_RESOURCES_PATH=""
@@ -222,12 +241,22 @@ SELECTED_BROWSER_MODE="none"
 SELECTED_ENABLE_VNC="false"
 SELECTED_WEB_RESOURCE_GROUPS=""
 SKIP_TUI=false
+VALIDATE_AUTH=false   # --validate-auth: skip TUI, run an in-container auth diagnostic
 
 # Parse initial arguments
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --quick)
             SKIP_TUI=true
+            shift
+            ;;
+        --validate-auth)
+            # Skip TUI, start with defaults, run an auth diagnostic in the
+            # container, then exit (no interactive claude). Skips the host-side
+            # probe so the in-container check always runs. See issue #30.
+            VALIDATE_AUTH=true
+            SKIP_TUI=true
+            export SKIP_AUTH_PROBE=1
             shift
             ;;
         --browser=*)
@@ -478,8 +507,92 @@ is_secret_selected() {
     return 1
 }
 
+# Preflight the injected Anthropic token so a dead/expired credential fails loudly
+# here, instead of dropping the agent at an interactive /login it cannot complete
+# (issue #30). Best-effort: only fully validated when the host has the claude CLI.
+validate_claude_token() {
+    [[ -z "$CLAUDE_OAUTH_TOKEN" ]] && return 0   # missing token already warned about
+    if [[ "$CLAUDE_OAUTH_TOKEN" != sk-ant-* ]]; then
+        echo "WARNING: Anthropic token has an unexpected format (expected 'sk-ant-…')." >&2
+    fi
+    if [[ "${SKIP_AUTH_PROBE:-0}" == "1" ]]; then
+        echo "Anthropic auth: live probe skipped (SKIP_AUTH_PROBE=1)."
+        return 0
+    fi
+    # Live probe: `claude auth status` only reports a token is *present*, not that
+    # it works (a bogus token still shows loggedIn:true). A one-shot `claude -p`
+    # is the only real validator - it 401s on a dead/expired token. Prefer the host
+    # CLI; if the agent host has no claude (common - only the container image does),
+    # probe inside a throwaway container that mirrors the real run's network/proxy.
+    # Only a *definitive* auth failure blocks launch; a network/other error warns,
+    # to avoid false negatives.
+    local out rc=0
+    if command -v claude >/dev/null 2>&1; then
+        local tmpcfg; tmpcfg=$(mktemp -d)
+        if out=$(CLAUDE_CODE_OAUTH_TOKEN="$CLAUDE_OAUTH_TOKEN" CLAUDE_CONFIG_DIR="$tmpcfg" \
+                 timeout 30 claude -p "reply with: OK" 2>&1); then rc=0; else rc=$?; fi
+        rm -rf "$tmpcfg"
+    elif command -v podman >/dev/null 2>&1 && podman image exists "$CONTAINER_NAME" 2>/dev/null; then
+        echo "Anthropic auth: validating via container image $CONTAINER_NAME (no host claude)…"
+        if out=$(podman --cgroup-manager=cgroupfs run --rm \
+                    --userns=keep-id --network=ha-agent-net \
+                    -v "$AGENT_HOME/workspace":/workspace:Z \
+                    -e HTTP_PROXY=http://host.containers.internal:8888 \
+                    -e HTTPS_PROXY=http://host.containers.internal:8888 \
+                    -e NO_PROXY="api.anthropic.com,claude.ai,platform.claude.com,anthropic.com" \
+                    -e HOME=/workspace \
+                    -e CLAUDE_CODE_OAUTH_TOKEN="$CLAUDE_OAUTH_TOKEN" \
+                    "$CONTAINER_NAME" \
+                    bash -c 'export PATH=/usr/local/bin:/usr/bin:/bin:$PATH; claude -p "reply with: OK"' 2>&1)
+        then rc=0; else rc=$?; fi
+    else
+        echo "Anthropic auth: token loaded; validation skipped (no host claude, no podman/image)." >&2
+        return 0
+    fi
+
+    if [[ $rc -eq 0 ]]; then
+        echo "Anthropic auth: token validated (live probe)."
+        return 0
+    fi
+    if grep -qiE '401|invalid (bearer|authentication|api)|not logged in|please run /login' <<<"$out"; then
+        echo "ERROR: Anthropic token failed authentication - refusing to launch:" >&2
+        echo "       ${out:-<no output>}" >&2
+        echo "       Mint a fresh token:  claude setup-token   (or SKIP_AUTH_PROBE=1 to bypass)" >&2
+        exit 1
+    fi
+    echo "WARNING: could not validate the token (looks like a network/other error, not an" >&2
+    echo "         auth failure); proceeding. Output: ${out:-<none>}" >&2
+    return 0
+}
+
 # Load secrets based on selection (populated after TUI runs, but need defaults for --quick mode)
 load_selected_secrets() {
+    # Anthropic auth (Tier-1 baseline) - always injected, not user-selectable.
+    # Without a credential Claude Code falls back to interactive /login, which is
+    # impossible in the headless container. Inject a long-lived token minted with
+    # `claude setup-token` (CLAUDE_CODE_OAUTH_TOKEN): ~1y, no refresh rotation, so
+    # it is idle-proof - unlike a copied /login access token, which dies in ~8h.
+    # This token is inference-only and cannot do Remote Control; for that use the
+    # in-container `claude-rc` helper (Tier-2), which unsets this var first.
+    CLAUDE_OAUTH_TOKEN=""
+    local setup_token="$AGENT_HOME/workspace/.secrets/claude_setup_token"
+    local legacy_token="$AGENT_HOME/workspace/.secrets/claude_oauth_token"
+    if [[ -f "$setup_token" ]]; then
+        CLAUDE_OAUTH_TOKEN=$(cat "$setup_token")
+    elif [[ -f "$legacy_token" ]]; then
+        CLAUDE_OAUTH_TOKEN=$(cat "$legacy_token")
+        echo "WARNING: using legacy secret $legacy_token - this is likely a short-lived" >&2
+        echo "         access token (deprecated sync_oauth_token.sh) that 401s in ~8h." >&2
+        echo "         Replace it with a durable token:  claude setup-token  then" >&2
+        echo "         install -m600 /dev/stdin $setup_token <<<'<token>'" >&2
+    else
+        echo "WARNING: no Anthropic token found at $setup_token" >&2
+        echo "         Claude will 401 and prompt for /login. Create it with:" >&2
+        echo "           claude setup-token   # on the host, then:" >&2
+        echo "           install -m600 /dev/stdin $setup_token <<<'<token>'" >&2
+    fi
+    validate_claude_token
+
     # Selectable secrets - only loaded if selected in TUI
     GH_TOKEN=""
     HA_ACCESS_TOKEN=""
@@ -548,6 +661,7 @@ if [[ $# -gt 0 && "$1" != "--"* ]]; then
         -e HTTPS_PROXY=http://host.containers.internal:8888 \
         -e NO_PROXY="api.anthropic.com,claude.ai,platform.claude.com,anthropic.com" \
         -e HOME=/workspace \
+        -e CLAUDE_CODE_OAUTH_TOKEN="$CLAUDE_OAUTH_TOKEN" \
         -e BROWSER_MODE="$SELECTED_BROWSER_MODE" \
         -e ENABLE_VNC="$SELECTED_ENABLE_VNC" \
         -e GH_TOKEN="$GH_TOKEN" \
@@ -665,8 +779,34 @@ elif [[ -n "$AGENT_ID" && -n "$WEB_RESOURCES_PATH" && -f "$WEB_RESOURCES_PATH" ]
     WEB_RESOURCES_MOUNT="-v $WEB_RESOURCES_PATH:/etc/freigang/policies/${AGENT_ID}_web_resources.yaml:Z,ro"
 fi
 
-# Start container with Claude
-exec podman --cgroup-manager=cgroupfs run --rm -it \
+# Container command: normal interactive claude, or (--validate-auth) a one-shot
+# auth diagnostic that prints the injected token state and probes auth, then exits.
+TTY_FLAGS="-it"
+if [[ "$VALIDATE_AUTH" == true ]]; then
+    TTY_FLAGS="-i"
+    CONTAINER_CMD=(bash -c '
+export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
+echo "=== container auth diagnostic ==="
+echo "HOME=$HOME"
+echo "claude: $(command -v claude || echo NOT-FOUND)"
+if [ -n "$CLAUDE_CODE_OAUTH_TOKEN" ]; then
+    echo "CLAUDE_CODE_OAUTH_TOKEN: set len=${#CLAUDE_CODE_OAUTH_TOKEN} prefix=$(printf %s "$CLAUDE_CODE_OAUTH_TOKEN" | cut -c1-13)"
+else
+    echo "CLAUDE_CODE_OAUTH_TOKEN: EMPTY (nothing injected)"
+fi
+echo "ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:+set}"
+echo "-- persisted /login creds (would override an empty token) --"
+ls -la "$HOME/.claude/.credentials.json" 2>/dev/null || echo "(none)"
+echo "-- claude --version --"; claude --version
+echo "-- claude auth status --"; claude auth status 2>&1 | head
+echo "-- claude -p live probe --"; claude -p "reply with: OK" 2>&1 | head
+')
+else
+    CONTAINER_CMD=(claude $CLAUDE_ARGS)
+fi
+
+# Start container
+exec podman --cgroup-manager=cgroupfs run --rm $TTY_FLAGS \
     --name "$CONTAINER_NAME" \
     --userns=keep-id \
     --shm-size=2g \
@@ -681,6 +821,7 @@ exec podman --cgroup-manager=cgroupfs run --rm -it \
     -e HTTPS_PROXY=http://host.containers.internal:8888 \
     -e NO_PROXY="api.anthropic.com,claude.ai,platform.claude.com,anthropic.com" \
     -e HOME=/workspace \
+    -e CLAUDE_CODE_OAUTH_TOKEN="$CLAUDE_OAUTH_TOKEN" \
     -e BROWSER_MODE="$SELECTED_BROWSER_MODE" \
     -e ENABLE_VNC="$SELECTED_ENABLE_VNC" \
     -e REPO_AUTO_SYNC="${REPO_AUTO_SYNC:-false}" \
@@ -690,4 +831,4 @@ exec podman --cgroup-manager=cgroupfs run --rm -it \
     -e MQTT_USER="$MQTT_USER" \
     -e MQTT_PASS="$MQTT_PASS" \
     "$CONTAINER_NAME" \
-    claude $CLAUDE_ARGS
+    "${CONTAINER_CMD[@]}"
