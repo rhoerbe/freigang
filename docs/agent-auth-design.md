@@ -166,12 +166,18 @@ refuse to launch — loudly — unless **all** hold:
    setup-tokens **coexist** — the fleet can share one (#32) or use per-agent tokens, and
    re-minting anywhere does not break existing agents. (Also confirmed token A is a durable
    setup-token: valid a day later on a bare env var with no refresh path.)
-3. **rainova cross-machine kill** — when `/login` on riva apparently invalidated rainova:
-   shared credential file, or an account-level grant cap? (Local evidence shows ≥2 `/login`
-   grants — r2h2 + ha_agent — coexisting, so a hard "1 device" cap is unlikely.)
+3. ✅ **rainova cross-machine kill — RESOLVED** (2026-06-22, #34): copying/sync ruled out
+   (rainova's `/login` was independent; riva has no cred-sync — not a symlink, no dotfiles
+   repo, no sync daemon). → consistent with an **account-level concurrent-session limit on
+   full-scope `/login` grants** (a new login evicts an older one), distinct from setup-tokens
+   which coexist (#32, #33). Exact cap untested by design (testing risks evicting the live
+   session and doesn't change the build). **Guidance:** never copy `.credentials.json`
+   between machines (it silently killed `ha_agent`); fleet = setup-tokens; Remote Control =
+   one full-scope `/login` at a time.
 4. **Pro quota** sufficiency for N concurrent agents; Max if not. (Parked tier decision.)
-5. **ray loose end:** `claude` is not installed for `agent` or `r2h2` on 10.2.2.50 — confirm
-   which user/path ran the interactive `claude` that showed the onboarding picker.
+5. ✅ **ray loose end — RESOLVED**: `claude` (2.1.176) is now installed for `agent@ray` and
+   authenticates headlessly via the `.bashrc` `CLAUDE_CODE_OAUTH_TOKEN`; the "select a login
+   method" screen was the interactive onboarding wizard on a fresh user, not an auth failure.
 
 ## References
 
