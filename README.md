@@ -10,6 +10,7 @@ They face specific risks that traditional IAM doesn't fully cover:
 * The Von Neumann Gap: LLMs do not strictly separate "data" from "instructions," making them inherently vulnerable 
   to Prompt Injection.
 * Agents need dedicated non-human identities, but users will bypass security if the process is too complex.
+* The use of LLMs can be expensive and requires cost-control.
 
 ## 2. Architecture Overview
 

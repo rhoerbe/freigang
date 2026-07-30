@@ -1,6 +1,10 @@
 # Agent Access Policy
 
-You are running in an isolated container with restricted network access.
+Status: The project is currently supporting only a single project, single repo and single set of agent access.
+This document shall be converted to a human-readable Cedar policy (without loosing information). 
+Policies shall be linked to an agent in the context of a project, allowing different agens having different access policies. 
+
+You are running in an isolated container with restricted tool and network access.
 
 ## Allowed Access
 
