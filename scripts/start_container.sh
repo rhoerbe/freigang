@@ -532,6 +532,21 @@ is_secret_selected() {
     return 1
 }
 
+# Build the /mail bind-mount (issue #37): single source for both the direct-command
+# path and the main launch path below, so this security-relevant logic cannot diverge
+# between the two call sites. Sets the global MAIL_MOUNT, sibling of /sessions,
+# read-only, present only when the agent config has mail.enabled: true AND the
+# per-session toggle selected it this run. Off by default - when the toggle is off
+# (or the agent has no mail: block) MAIL_MOUNT is set to the empty string, so the
+# mount is absent entirely, not mounted-but-empty: zero bytes of mail reachable.
+build_mail_mount() {
+    MAIL_MOUNT=""
+    if [[ "$MAIL_ENABLED" == "true" && "$SELECTED_MAIL_ENABLED" == "true" ]]; then
+        mkdir -p "$AGENT_HOME/$MAIL_MAILDIR"
+        MAIL_MOUNT="-v $AGENT_HOME/$MAIL_MAILDIR:/mail:Z,ro"
+    fi
+}
+
 # Preflight the injected Anthropic token so a dead/expired credential fails loudly
 # here, instead of dropping the agent at an interactive /login it cannot complete
 # (issue #30). Best-effort: only fully validated when the host has the claude CLI.
@@ -733,16 +748,11 @@ if [[ $# -gt 0 && "$1" != "--"* ]]; then
         WEB_RESOURCES_MOUNT="-v $WEB_RESOURCES_PATH:/etc/freigang/policies/${AGENT_ID}_web_resources.yaml:Z,ro"
     fi
 
-    # Build /mail bind-mount (issue #37): only when the agent config has mail.enabled: true
-    # AND the per-session toggle selected it. Direct-command invocations (this branch) skip
-    # the TUI, so SELECTED_MAIL_ENABLED stays at its "false" default here - mail stays
-    # unmounted for `start-ha-agent bash` etc. unless a future flag opts in. Absent, not
-    # mounted-but-empty: no directory is even bind-mounted when the toggle is off.
-    MAIL_MOUNT=""
-    if [[ "$MAIL_ENABLED" == "true" && "$SELECTED_MAIL_ENABLED" == "true" ]]; then
-        mkdir -p "$AGENT_HOME/$MAIL_MAILDIR"
-        MAIL_MOUNT="-v $AGENT_HOME/$MAIL_MAILDIR:/mail:Z,ro"
-    fi
+    # Build /mail bind-mount (issue #37): see build_mail_mount(). Direct-command
+    # invocations (this branch) skip the TUI, so SELECTED_MAIL_ENABLED stays at its
+    # "false" default here - mail stays unmounted for `start-ha-agent bash` etc.
+    # unless a future flag opts in.
+    build_mail_mount
 
     # Start container with the provided command
     exec podman --cgroup-manager=cgroupfs run --rm -it \
@@ -879,15 +889,9 @@ elif [[ -n "$AGENT_ID" && -n "$WEB_RESOURCES_PATH" && -f "$WEB_RESOURCES_PATH" ]
     WEB_RESOURCES_MOUNT="-v $WEB_RESOURCES_PATH:/etc/freigang/policies/${AGENT_ID}_web_resources.yaml:Z,ro"
 fi
 
-# Build /mail bind-mount (issue #37): sibling of /sessions, read-only, present only when the
-# agent config has mail.enabled: true AND the per-session TUI toggle selected it this run.
-# Off by default - when the toggle is off (or the agent has no mail: block) the mount is
-# absent entirely, not mounted-but-empty, so the container has zero bytes of mail reachable.
-MAIL_MOUNT=""
-if [[ "$MAIL_ENABLED" == "true" && "$SELECTED_MAIL_ENABLED" == "true" ]]; then
-    mkdir -p "$AGENT_HOME/$MAIL_MAILDIR"
-    MAIL_MOUNT="-v $AGENT_HOME/$MAIL_MAILDIR:/mail:Z,ro"
-fi
+# Build /mail bind-mount (issue #37): see build_mail_mount(). This is the main launch
+# path, run after the TUI (or its skip-path defaults) has settled SELECTED_MAIL_ENABLED.
+build_mail_mount
 
 # Container command: normal interactive claude, or (--validate-auth) a one-shot
 # auth diagnostic that prints the injected token state and probes auth, then exits.
