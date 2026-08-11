@@ -112,7 +112,7 @@ def build_from_sidecar(config: RendererConfig, path: Path, known_ids: set[str] |
 
 
 def header_names(raw: bytes) -> set[str]:
-    return {name.lower() for name in message_from_bytes(raw).keys()}
+    return {name.lower() for name, _ in message_from_bytes(raw).items()}
 
 
 # ---------------------------------------------------------------------------
