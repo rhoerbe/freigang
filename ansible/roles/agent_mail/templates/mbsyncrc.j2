@@ -12,7 +12,7 @@ Host {{ agent_mail_imap_host }}
 Port {{ agent_mail_imap_port }}
 User {{ agent_mail_address }}
 PassCmd "cat {{ agent_mail_credential_dir }}/imap_password"
-SSLType IMAPS
+TLSType IMAPS
 CertificateFile /etc/ssl/certs/ca-certificates.crt
 
 IMAPStore {{ agent_mail_channel }}-remote
