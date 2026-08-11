@@ -9,6 +9,23 @@ import pytest
 FIXTURES_ROOT = Path(__file__).parent / "fixtures" / "mail"
 
 
+@pytest.fixture(autouse=True, scope="session")
+def _ensure_maildir_subdirs_exist() -> None:
+    """Create the `new/` and `tmp/` siblings of each checked-in fixture Maildir's `cur/`.
+
+    Git does not track empty directories, so a fresh clone ships only `cur/` for each fixture
+    Maildir. `mailbox.Maildir` requires all three subdirectories to exist and raises otherwise,
+    which fails every test that opens a fixture Maildir before any test code runs. Creating the
+    directories here (rather than committing a placeholder file such as `.gitkeep` inside `new/`)
+    avoids the placeholder itself being parsed as a message by `mailbox.Maildir`.
+    """
+    for maildir in FIXTURES_ROOT.iterdir():
+        if not maildir.is_dir():
+            continue
+        for subdir in ("new", "tmp", "cur"):
+            (maildir / subdir).mkdir(parents=True, exist_ok=True)
+
+
 @pytest.fixture
 def security_maildir() -> Path:
     return FIXTURES_ROOT / "security"
