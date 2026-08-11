@@ -565,6 +565,68 @@ validate_claude_token() {
     return 0
 }
 
+prune_stale_login_creds() {
+    # A persisted /login token in .credentials.json is promoted to an "approved API
+    # key" by .claude.json (customApiKeyResponses: ['via-credentials-json']) and then
+    # OUTRANKS the injected CLAUDE_CODE_OAUTH_TOKEN in the interactive REPL. So a
+    # *dead* one (expired, or no refresh token -> unrenewable) 401s the agent even
+    # though a valid setup-token is present and `claude -p` works (it ignores this
+    # file - which is exactly why the auth probe gives a false green). Remove a dead
+    # credential loudly so the injected token is used; leave a live one (e.g. an
+    # active claude-rc/Tier-2 session) alone. See docs/agent-auth-design.md (#30/#34).
+    local cred="$AGENT_HOME/workspace/.claude/.credentials.json"
+    [[ -f "$cred" ]] || return 0
+    local now_ms=$(( $(date +%s) * 1000 ))
+    local verdict
+    verdict=$(python3 - "$cred" "$now_ms" 2>/dev/null <<'PY'
+import json, sys, datetime
+try:
+    c = json.load(open(sys.argv[1]))["claudeAiOauth"]
+except Exception:
+    print("keep -"); sys.exit()
+exp = c.get("expiresAt", 0) or 0
+rt = c.get("refreshToken") or ""
+when = datetime.datetime.fromtimestamp(exp / 1000).isoformat(timespec="seconds") if exp else "unknown"
+if not rt:
+    print("dead", when, "(no-refresh-token)")
+elif exp and exp < int(sys.argv[2]):
+    print("dead", when, "(expired)")
+else:
+    print("live", when)
+PY
+) || verdict="keep -"
+
+    case "$verdict" in
+        dead*)
+            echo "WARNING: removing stale /login token in $cred" >&2
+            echo "         (expiry ${verdict#dead }). A dead persisted credential outranks the" >&2
+            echo "         injected setup-token in interactive mode and 401s the agent." >&2
+            echo "         For Remote Control use the in-container 'claude-rc' (Tier-2); it re-mints it." >&2
+            rm -f "$cred"
+            # Disarm the elevator: customApiKeyResponses 'via-credentials-json' is what
+            # promotes credentials.json above the env token. Drop it so a future creds
+            # file (e.g. a later claude-rc login) cannot silently re-shadow the token.
+            local cj="$AGENT_HOME/workspace/.claude.json"
+            if [[ -f "$cj" ]]; then
+                python3 - "$cj" 2>/dev/null <<'PY' || true
+import json, sys
+p = sys.argv[1]
+try:
+    d = json.load(open(p))
+except Exception:
+    sys.exit()
+if d.pop("customApiKeyResponses", None) is not None:
+    json.dump(d, open(p, "w"), indent=2)
+PY
+            fi
+            ;;
+        live*)
+            echo "Note: a live /login credential is present ($cred, expiry ${verdict#live });" >&2
+            echo "      in interactive mode it is used over the injected setup-token (both work)." >&2
+            ;;
+    esac
+}
+
 # Load secrets based on selection (populated after TUI runs, but need defaults for --quick mode)
 load_selected_secrets() {
     # Anthropic auth (Tier-1 baseline) - always injected, not user-selectable.
@@ -591,6 +653,7 @@ load_selected_secrets() {
         echo "           claude setup-token   # on the host, then:" >&2
         echo "           install -m600 /dev/stdin $setup_token <<<'<token>'" >&2
     fi
+    prune_stale_login_creds
     validate_claude_token
 
     # Selectable secrets - only loaded if selected in TUI
@@ -795,8 +858,26 @@ else
     echo "CLAUDE_CODE_OAUTH_TOKEN: EMPTY (nothing injected)"
 fi
 echo "ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:+set}"
-echo "-- persisted /login creds (would override an empty token) --"
-ls -la "$HOME/.claude/.credentials.json" 2>/dev/null || echo "(none)"
+echo "-- persisted /login creds (.credentials.json) --"
+CRED="$HOME/.claude/.credentials.json"
+if [ -f "$CRED" ]; then
+    ls -la "$CRED"
+    if command -v jq >/dev/null 2>&1; then
+        EXP=$(jq -r ".claudeAiOauth.expiresAt // 0" "$CRED" 2>/dev/null)
+        RT=$(jq -r ".claudeAiOauth.refreshToken // empty" "$CRED" 2>/dev/null)
+        NOW=$(( $(date +%s) * 1000 ))
+        if [ "${EXP:-0}" -gt 0 ] 2>/dev/null; then
+            echo "   expiresAt: $(date -d "@$((EXP/1000))" 2>/dev/null || echo "$EXP")"
+        fi
+        if [ -z "$RT" ] || { [ "${EXP:-0}" -gt 0 ] 2>/dev/null && [ "$EXP" -lt "$NOW" ]; }; then
+            echo "   WARNING: DEAD credential (expired or no refresh token). It OUTRANKS the"
+            echo "            injected setup-token in interactive mode and will 401 the agent."
+            echo "            The launcher prunes this at start; seeing it here means prune was skipped."
+        fi
+    fi
+else
+    echo "(none - good: the injected setup-token will be used)"
+fi
 echo "-- claude --version --"; claude --version
 echo "-- claude auth status --"; claude auth status 2>&1 | head
 echo "-- claude -p live probe --"; claude -p "reply with: OK" 2>&1 | head
