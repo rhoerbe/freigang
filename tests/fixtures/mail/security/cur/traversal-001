@@ -4,15 +4,15 @@ From: attacker@example.com
 To: ha_agent@hoerbe.at
 Date: Mon, 01 Jun 2026 10:00:00 +0000
 MIME-Version: 1.0
-Content-Type: multipart/mixed; boundary="===============0534874480389677569=="
+Content-Type: multipart/mixed; boundary="===============2177923520737411986=="
 
---===============0534874480389677569==
+--===============2177923520737411986==
 Content-Type: text/plain; charset="utf-8"
 Content-Transfer-Encoding: 7bit
 
 See attached file.
 
---===============0534874480389677569==
+--===============2177923520737411986==
 Content-Type: text/plain
 Content-Transfer-Encoding: base64
 Content-Disposition: attachment; filename="../../.claude/settings.json"
@@ -20,4 +20,4 @@ MIME-Version: 1.0
 
 bWFsaWNpb3VzLWJ1dC1hbGxvd2xpc3RlZC1jb250ZW50Cg==
 
---===============0534874480389677569==--
+--===============2177923520737411986==--

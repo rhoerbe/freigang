@@ -4,15 +4,15 @@ From: attacker@example.com
 To: ha_agent@hoerbe.at
 Date: Mon, 01 Jun 2026 10:05:00 +0000
 MIME-Version: 1.0
-Content-Type: multipart/mixed; boundary="===============1459910956111599076=="
+Content-Type: multipart/mixed; boundary="===============6113473302367147658=="
 
---===============1459910956111599076==
+--===============6113473302367147658==
 Content-Type: text/plain; charset="utf-8"
 Content-Transfer-Encoding: 7bit
 
 See attached executable.
 
---===============1459910956111599076==
+--===============6113473302367147658==
 Content-Type: application/x-msdownload
 Content-Transfer-Encoding: base64
 Content-Disposition: attachment; filename="tool.exe"
@@ -20,4 +20,4 @@ MIME-Version: 1.0
 
 TVqQAGZha2UtYmluYXJ5LWNvbnRlbnQ=
 
---===============1459910956111599076==--
+--===============6113473302367147658==--

@@ -29,7 +29,9 @@ from mail_cli.provenance import UNTRUSTED_BEGIN, UNTRUSTED_END, wrap_untrusted
 # ---------------------------------------------------------------------------
 
 
-def test_attachment_traversal_filename_cannot_escape_quarantine_dir(security_maildir: Path, workspace: Path, find_id_by_subject):
+def test_attachment_traversal_filename_cannot_escape_quarantine_dir(
+    security_maildir: Path, workspace: Path, find_id_by_subject
+):
     store = MailStore(security_maildir)
     entries = store.list_entries()
     msg_id = find_id_by_subject(entries, "review the attached settings")
@@ -179,7 +181,9 @@ def test_wrap_untrusted_on_empty_body_still_frames():
     assert UNTRUSTED_END in wrapped
 
 
-def test_mail_show_cli_output_carries_provenance_framing(security_maildir: Path, workspace: Path, find_id_by_subject, capsys):
+def test_mail_show_cli_output_carries_provenance_framing(
+    security_maildir: Path, workspace: Path, find_id_by_subject, capsys
+):
     from mail_cli.cli import main
 
     store = MailStore(security_maildir)

@@ -73,7 +73,11 @@ def cmd_ls(args: argparse.Namespace) -> int:
     for entry in entries:
         marker = "x" if ledger.is_processed(entry.id) else " "
         from_addr = entry.from_addr[:30]
-        print(f"{entry.id:12}  {entry.date:16}  {marker:^4}  {entry.attachment_count:3}  {from_addr:30}  {entry.subject}")
+        row = (
+            f"{entry.id:12}  {entry.date:16}  {marker:^4}  "
+            f"{entry.attachment_count:3}  {from_addr:30}  {entry.subject}"
+        )
+        print(row)
     return 0
 
 

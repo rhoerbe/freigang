@@ -4,15 +4,15 @@ From: colleague@example.com
 To: ha_agent@hoerbe.at
 Date: Mon, 01 Jun 2026 10:10:00 +0000
 MIME-Version: 1.0
-Content-Type: multipart/mixed; boundary="===============8305470150215219523=="
+Content-Type: multipart/mixed; boundary="===============6355646352750596909=="
 
---===============8305470150215219523==
+--===============6355646352750596909==
 Content-Type: text/plain; charset="utf-8"
 Content-Transfer-Encoding: 7bit
 
 See attached log.
 
---===============8305470150215219523==
+--===============6355646352750596909==
 Content-Type: text/plain
 Content-Transfer-Encoding: base64
 Content-Disposition: attachment; filename="big.log"
@@ -116,4 +116,4 @@ b2cgbGluZSAwCmxvZyBsaW5lIDAKbG9nIGxpbmUgMApsb2cgbGluZSAwCmxvZyBsaW5lIDAKbG9n
 IGxpbmUgMApsb2cgbGluZSAwCmxvZyBsaW5lIDAKbG9nIGxpbmUgMApsb2cgbGluZSAwCmxvZyBs
 aW5lIDAKbG9nIGxpbmUgMApsb2cgbGluZSAwCg==
 
---===============8305470150215219523==--
+--===============6355646352750596909==--

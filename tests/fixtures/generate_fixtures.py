@@ -140,7 +140,9 @@ def build_mime_maildir() -> None:
     del msg["Content-Transfer-Encoding"]
     msg["Content-Transfer-Encoding"] = "base64"
     msg.set_payload(base64.encodebytes(payload.encode("utf-8")).decode("ascii"))
-    _base_headers(msg, "<base64-001@fixtures.local>", "Base64 body", "sender@example.com", "Mon, 01 Jun 2026 11:00:00 +0000")
+    _base_headers(
+        msg, "<base64-001@fixtures.local>", "Base64 body", "sender@example.com", "Mon, 01 Jun 2026 11:00:00 +0000"
+    )
     _write_message(maildir, "base64-001", bytes(msg.as_bytes()))
 
     # 2. quoted-printable text/plain with non-ASCII.
@@ -149,19 +151,27 @@ def build_mime_maildir() -> None:
     del msg["Content-Transfer-Encoding"]
     msg["Content-Transfer-Encoding"] = "quoted-printable"
     msg.set_payload(quopri.encodestring(payload.encode("utf-8")).decode("ascii"))
-    _base_headers(msg, "<qp-002@fixtures.local>", "Quoted-printable body", "sender@example.com", "Mon, 01 Jun 2026 11:05:00 +0000")
+    _base_headers(
+        msg, "<qp-002@fixtures.local>", "Quoted-printable body", "sender@example.com", "Mon, 01 Jun 2026 11:05:00 +0000"
+    )
     _write_message(maildir, "qp-002", bytes(msg.as_bytes()))
 
     # 3. HTML-only message (no text/plain part at all).
     html = "<html><body><p>Hello <b>HTML</b> World</p><p>Second paragraph.</p></body></html>"
     msg = MIMEText(html, _subtype="html", _charset="utf-8")
-    _base_headers(msg, "<html-only-003@fixtures.local>", "HTML only", "sender@example.com", "Mon, 01 Jun 2026 11:10:00 +0000")
+    _base_headers(
+        msg, "<html-only-003@fixtures.local>", "HTML only", "sender@example.com", "Mon, 01 Jun 2026 11:10:00 +0000"
+    )
     _write_message(maildir, "html-only-003", bytes(msg.as_bytes()))
 
     # 4. multipart/alternative: plain must be preferred over html.
     msg = MIMEMultipart("alternative")
     _base_headers(
-        msg, "<multipart-alt-004@fixtures.local>", "Multipart alternative", "sender@example.com", "Mon, 01 Jun 2026 11:15:00 +0000"
+        msg,
+        "<multipart-alt-004@fixtures.local>",
+        "Multipart alternative",
+        "sender@example.com",
+        "Mon, 01 Jun 2026 11:15:00 +0000",
     )
     msg.attach(MIMEText("Plain version of the message.\n", "plain", "utf-8"))
     msg.attach(MIMEText("<p>HTML version of the message.</p>", "html", "utf-8"))
