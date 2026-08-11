@@ -1,0 +1,10 @@
+Content-Type: text/plain; charset="utf-8"
+MIME-Version: 1.0
+Content-Transfer-Encoding: base64
+Message-ID: <base64-001@fixtures.local>
+Subject: Base64 body
+From: sender@example.com
+To: ha_agent@hoerbe.at
+Date: Mon, 01 Jun 2026 11:00:00 +0000
+
+SGVsbG8gQmFzZTY0IFdvcmxkClNlY29uZCBsaW5lLgo=
