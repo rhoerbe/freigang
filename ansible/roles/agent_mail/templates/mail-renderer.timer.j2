@@ -1,0 +1,10 @@
+[Unit]
+Description=Periodic drain of {{ agent_mail_out_dir }} into the {{ agent_mail_renderer_drafts_folder }} folder
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec={{ agent_mail_renderer_interval }}
+Persistent=true
+
+[Install]
+WantedBy=timers.target

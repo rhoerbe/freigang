@@ -1,0 +1,129 @@
+# agent_mail (phase 4, issue #37): host-side draft renderer -- the only upward path.
+#
+# Included additively from tasks/main.yml (phase 2) with:
+#
+#   - name: Install the host-side draft renderer
+#     ansible.builtin.import_tasks: renderer.yml
+#
+# Import it AFTER the "Set agent_mail_uid fact" task in tasks/main.yml: the
+# systemd --user tasks below need that fact.
+#
+# All renderer variables are resolved here with `default()` so this file stays
+# self-contained and phase 2's defaults/main.yml does not have to be rewritten.
+# Override any of them in group_vars or in the play. There is deliberately no
+# handler here either: the units are re-deployed and the timer re-enabled on
+# every run, and the renderer reads its configuration from the unit environment
+# at each invocation.
+#
+# Note on agent_mail_renderer_to: it defaults to the agent's own mailbox, which
+# is always safe. Set it to the mailbox owner's personal address in group_vars
+# if drafts should be pre-addressed to a human -- never to an address proposed
+# by the agent.
+
+- name: Resolve draft renderer settings
+  ansible.builtin.set_fact:
+    agent_mail_renderer_root: "{{ agent_mail_renderer_root | default(agent_mail_home ~ '/.mailrenderer') }}"
+    agent_mail_renderer_from: "{{ agent_mail_renderer_from | default(agent_mail_address) }}"
+    agent_mail_renderer_to: "{{ agent_mail_renderer_to | default(agent_mail_address) }}"
+    agent_mail_renderer_drafts_folder: "{{ agent_mail_renderer_drafts_folder | default('Drafts') }}"
+    agent_mail_renderer_interval: "{{ agent_mail_renderer_interval | default('10min') }}"
+    agent_mail_renderer_max_drafts: "{{ agent_mail_renderer_max_drafts | default(20) }}"
+    agent_mail_renderer_max_body_bytes: "{{ agent_mail_renderer_max_body_bytes | default(262144) }}"
+    agent_mail_out_dir: "{{ agent_mail_out_dir | default(agent_mail_home ~ '/workspace/mail-out') }}"
+
+# ---
+
+- name: Create renderer install root (root-owned; the agent must not be able to modify renderer code)
+  ansible.builtin.file:
+    path: "{{ agent_mail_renderer_root }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# ---
+
+- name: Create the mail_renderer package directory
+  ansible.builtin.file:
+    path: "{{ agent_mail_renderer_root }}/mail_renderer"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# ---
+
+- name: Install the mail_renderer modules from the repository
+  ansible.builtin.copy:
+    src: "{{ item }}"
+    dest: "{{ agent_mail_renderer_root }}/mail_renderer/{{ item | basename }}"
+    owner: root
+    group: root
+    mode: "0644"
+  with_fileglob:
+    - "{{ role_path }}/../../../mail_renderer/*.py"
+
+# ---
+
+- name: Create the renderer virtualenv (stdlib only, but venv per repo convention)
+  ansible.builtin.command:
+    cmd: /usr/bin/python3 -m venv {{ agent_mail_renderer_root }}/venv
+    creates: "{{ agent_mail_renderer_root }}/venv/bin/python3"
+
+# ---
+
+- name: Create the agent draft drop directories (inside the container-writable workspace)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ agent_mail_username }}"
+    group: "{{ agent_mail_username }}"
+    mode: "0700"
+  loop:
+    - "{{ agent_mail_out_dir }}"
+    - "{{ agent_mail_out_dir }}/posted"
+    - "{{ agent_mail_out_dir }}/failed"
+
+# ---
+
+- name: Deploy the draft renderer systemd user service
+  ansible.builtin.template:
+    src: mail-renderer.service.j2
+    dest: "{{ agent_mail_home }}/.config/systemd/user/mail-renderer.service"
+    owner: "{{ agent_mail_username }}"
+    group: "{{ agent_mail_username }}"
+    mode: "0644"
+
+# ---
+
+- name: Deploy the draft renderer systemd user timer
+  ansible.builtin.template:
+    src: mail-renderer.timer.j2
+    dest: "{{ agent_mail_home }}/.config/systemd/user/mail-renderer.timer"
+    owner: "{{ agent_mail_username }}"
+    group: "{{ agent_mail_username }}"
+    mode: "0644"
+
+# ---
+
+- name: Reload systemd --user daemon for {{ agent_mail_username }}
+  ansible.builtin.systemd:
+    daemon_reload: true
+    scope: user
+  become: true
+  become_user: "{{ agent_mail_username }}"
+  environment:
+    XDG_RUNTIME_DIR: "/run/user/{{ agent_mail_uid }}"
+
+# ---
+
+- name: Enable and start the draft renderer timer for {{ agent_mail_username }}
+  ansible.builtin.systemd:
+    name: mail-renderer.timer
+    scope: user
+    enabled: true
+    state: started
+  become: true
+  become_user: "{{ agent_mail_username }}"
+  environment:
+    XDG_RUNTIME_DIR: "/run/user/{{ agent_mail_uid }}"
