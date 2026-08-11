@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from email.message import Message
 from html.parser import HTMLParser
+from typing import ClassVar
 
 TRUNCATION_NOTICE = "\n\n[... body truncated: exceeds size cap ...]"
 
@@ -17,7 +18,7 @@ TRUNCATION_NOTICE = "\n\n[... body truncated: exceeds size cap ...]"
 class _TextExtractingHTMLParser(HTMLParser):
     """Minimal HTML-to-text: strips tags, keeps text, skips style/script."""
 
-    _SKIP_TAGS = {"script", "style"}
+    _SKIP_TAGS: ClassVar[set[str]] = {"script", "style"}
 
     def __init__(self):
         super().__init__(convert_charrefs=True)

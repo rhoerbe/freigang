@@ -80,7 +80,7 @@ class MailStore:
         self._mbox = mailbox.Maildir(str(self.maildir_path), factory=None, create=False)
 
     def _iter_keyed_messages(self):
-        for key in self._mbox.keys():
+        for key in self._mbox.keys():  # noqa: SIM118 -- mailbox.Maildir.__iter__ yields messages, not keys
             yield key, self._mbox.get_message(key)
 
     def list_entries(self) -> list[MailEntry]:

@@ -23,7 +23,6 @@ from mail_cli.ledger import Ledger
 from mail_cli.mailstore import MailStore
 from mail_cli.provenance import UNTRUSTED_BEGIN, UNTRUSTED_END, wrap_untrusted
 
-
 # ---------------------------------------------------------------------------
 # 1. Attachment path traversal
 # ---------------------------------------------------------------------------

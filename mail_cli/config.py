@@ -55,7 +55,7 @@ class MailConfig:
         workspace: str | Path | None = None,
         attach_max_bytes: int | None = None,
         body_max_bytes: int | None = None,
-    ) -> "MailConfig":
+    ) -> MailConfig:
         """Resolve configuration from explicit args, then env vars, then defaults."""
         resolved_maildir = Path(maildir) if maildir is not None else Path(os.environ.get(ENV_MAILDIR, DEFAULT_MAILDIR))
         resolved_workspace = (
