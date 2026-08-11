@@ -461,6 +461,24 @@ def test_config_accepts_a_credential_path_outside_the_workspace(config: Renderer
     config.validate()
 
 
+def test_drain_refuses_an_unsafe_configuration_before_appending_anything(config: RendererConfig, mail_out: Path):
+    write_draft(mail_out, "ok", {"subject": "harmless"})
+    unsafe = RendererConfig(
+        mail_out=config.mail_out,
+        maildir=config.maildir,
+        from_addr=FROM_ADDR,
+        to_addr=TO_ADDR,
+        imap_host="imap.example.test",
+        imap_user="ha_agent@example.test",
+        imap_password_file=mail_out / "imap_password",
+    )
+    appender = FakeAppender()
+    with pytest.raises(ConfigError):
+        drain(unsafe, appender)
+    assert appender.appended == []
+    assert (mail_out / "ok.json").exists()
+
+
 def test_renderer_package_never_references_the_credential_from_workspace():
     """Grep-level guard: no module may join a workspace path with the credential name."""
     package = Path(__file__).resolve().parent.parent / "mail_renderer"

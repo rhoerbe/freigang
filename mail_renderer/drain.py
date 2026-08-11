@@ -111,6 +111,10 @@ def pending_sidecars(config: RendererConfig) -> list[Path]:
 
 def drain(config: RendererConfig, appender: Appender, known_ids: set[str] | None = None) -> DrainReport:
     """Process up to `max_drafts_per_run` sidecars. Never raises on bad input."""
+    # Fail closed before touching anything: an unsafe configuration (credential
+    # inside the container-writable tree, unset From/To, ...) must never drain.
+    config.validate()
+
     report = DrainReport()
     posted_dir = _ensure_subdir(config.mail_out, "posted")
     failed_dir = _ensure_subdir(config.mail_out, "failed")
