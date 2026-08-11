@@ -334,6 +334,26 @@ class LauncherApp(App):
                     if not self.config["secrets"]:
                         yield Static("[dim]No secrets configured[/]")
 
+            # Mail (config-gated, per-session toggle, default OFF - issue #37).
+            # Shown only when the agent config has mail.enabled: true; the mount itself
+            # only happens when this checkbox is also checked for this session.
+            if self.config.get("mail_capable"):
+                with Vertical(classes="section"):
+                    yield Label("Mail:")
+                    with Horizontal(classes="mcp-grid"):
+                        yield Checkbox(
+                            "Mount /mail (read-only)",
+                            value=self.config.get("default_mail_enabled", False),
+                            id="mail-enabled",
+                            classes="mcp-checkbox",
+                        )
+                    detail = self.config.get("mail_imap_host") or "n/a"
+                    yield Static(
+                        f"[dim]Drafts folder: {self.config.get('mail_drafts_folder', 'Drafts')}"
+                        f"  |  IMAP host: {detail}[/]",
+                        classes="context-line",
+                    )
+
             # Web Access Filter (only when policy groups are available)
             # Each group: checkbox (enable/disable) + collapsible (expand to see URLs)
             if self.config.get("web_resource_groups"):
@@ -449,6 +469,15 @@ class LauncherApp(App):
             if playwright_server:
                 mcp_servers.append({"name": "playwright", "package": playwright_server["package"]})
 
+        # Collect mail toggle (only present when the agent config offers mail capability)
+        mail_enabled = False
+        if self.config.get("mail_capable"):
+            try:
+                mail_checkbox = self.query_one("#mail-enabled", Checkbox)
+                mail_enabled = mail_checkbox.value
+            except Exception:
+                pass
+
         # Collect web resource groups
         web_resource_groups = []
         for group in self.config.get("web_resource_groups", []):
@@ -469,6 +498,7 @@ class LauncherApp(App):
             "browser_mode": browser_mode,
             "enable_vnc": enable_vnc,
             "web_resource_groups": web_resource_groups,
+            "mail_enabled": mail_enabled,
         }
         self.exit()
 
@@ -602,6 +632,14 @@ def load_config() -> dict:
     # Default: all groups enabled unless a previous preference was saved
     default_web_groups = user_prefs.get("web_resource_groups", [g["name"] for g in web_resource_groups])
 
+    # Mail capability (issue #37): config-level gate (does this agent have mail.enabled: true)
+    # plus the per-session toggle default (off, unless the user turned it on previously).
+    mail_capable = os.environ.get("MAIL_ENABLED", "false").strip().lower() == "true"
+    mail_maildir = os.environ.get("MAIL_MAILDIR", "mail")
+    mail_imap_host = os.environ.get("MAIL_IMAP_HOST", "")
+    mail_drafts_folder = os.environ.get("MAIL_DRAFTS_FOLDER", "Drafts")
+    default_mail_enabled = user_prefs.get("mail_enabled", False) if mail_capable else False
+
     # Sessions
     sessions_dir = Path(agent_home) / "workspace" / repo_name / ".claude" / "projects"
     sessions = []
@@ -628,6 +666,11 @@ def load_config() -> dict:
         "default_enable_vnc": default_enable_vnc,
         "web_resource_groups": web_resource_groups,
         "default_web_groups": default_web_groups,
+        "mail_capable": mail_capable,
+        "mail_maildir": mail_maildir,
+        "mail_imap_host": mail_imap_host,
+        "mail_drafts_folder": mail_drafts_folder,
+        "default_mail_enabled": default_mail_enabled,
         "sessions": sessions,
         "prefs_path": prefs_path,
         "claude_settings_path": claude_settings_path,
@@ -666,6 +709,7 @@ def main() -> int:
                 "browser_mode": app.result.get("browser_mode", "none"),
                 "enable_vnc": app.result.get("enable_vnc", False),
                 "web_resource_groups": app.result.get("web_resource_groups", []),
+                "mail_enabled": app.result.get("mail_enabled", False),
             }
             save_user_preferences(config["prefs_path"], prefs)
 
