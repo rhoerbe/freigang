@@ -1,0 +1,9 @@
+- name: Restart agent mail timer
+  ansible.builtin.systemd:
+    name: mbsync.timer
+    scope: user
+    state: restarted
+  become: true
+  become_user: "{{ agent_mail_username }}"
+  environment:
+    XDG_RUNTIME_DIR: "/run/user/{{ agent_mail_uid }}"

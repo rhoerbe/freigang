@@ -1,0 +1,33 @@
+# Managed by Ansible role agent_mail -- do not edit by hand.
+# Source: ansible/roles/agent_mail/templates/mbsyncrc.j2
+#
+# One-way DOWN sync only ("Sync Pull"): this channel never pushes local state back to
+# the server -- no upward flag sync, no two-way channel. This is a hard design
+# constraint (issue #37), not a preference: a two-way channel would reopen an upward
+# write path beyond the Drafts folder and destroy the guarantee that the agent cannot
+# send mail through this account.
+
+IMAPAccount {{ agent_mail_channel }}
+Host {{ agent_mail_imap_host }}
+Port {{ agent_mail_imap_port }}
+User {{ agent_mail_address }}
+PassCmd "cat {{ agent_mail_credential_dir }}/imap_password"
+SSLType IMAPS
+CertificateFile /etc/ssl/certs/ca-certificates.crt
+
+IMAPStore {{ agent_mail_channel }}-remote
+Account {{ agent_mail_channel }}
+
+MaildirStore {{ agent_mail_channel }}-local
+Path {{ agent_mail_maildir }}/
+Inbox {{ agent_mail_maildir }}/INBOX
+SubFolders Verbatim
+
+Channel {{ agent_mail_channel }}
+Far :{{ agent_mail_channel }}-remote:
+Near :{{ agent_mail_channel }}-local:
+Patterns *
+Create Near
+Expunge None
+Sync Pull
+SyncState *

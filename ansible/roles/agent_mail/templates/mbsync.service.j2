@@ -1,0 +1,6 @@
+[Unit]
+Description=One-way DOWN sync of {{ agent_mail_address }} via mbsync (issue #37)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/mbsync -c {{ agent_mail_credential_dir }}/mbsyncrc {{ agent_mail_channel }}

@@ -1,0 +1,55 @@
+# agent_mail: host-side, one-way DOWN mail sync (mbsync) plus credential placement.
+# See issue #37. The container never speaks IMAP and never holds this credential; all
+# IMAP traffic happens here, on the host, as this role's user (ha_agent is the first
+# consumer, not a hard-coded assumption of this role).
+
+# Host system account whose mailbox is being synced.
+agent_mail_username: ha_agent
+agent_mail_home: "/home/{{ agent_mail_username }}"
+
+# Mailbox being synced -- a real Hetzner mailbox with its own password (not an alias
+# into a personal mailbox). Note: Hetzner mailbox passwords authenticate SMTP as well as
+# IMAP, so the "agent cannot send mail" guarantee rests entirely on this credential never
+# entering the container (see agent_mail_credential_dir below), not on the credential
+# itself being incapable of sending.
+agent_mail_address: ha_agent@hoerbe.at
+
+# IMAP host -- always a hostname, never an IP: Hetzner shared-hosting IPs can renumber.
+# hoerbe.at MX -> www646.your-server.de; mail.your-server.de also resolves to the same
+# shared-hosting cluster.
+agent_mail_imap_host: mail.your-server.de
+agent_mail_imap_port: 993
+
+# mbsync channel/account name, local to the generated mbsyncrc.
+agent_mail_channel: hoerbe
+
+# Local Maildir target. Deliberately OUTSIDE {{ agent_mail_home }}/workspace so the
+# synced mail is never in the container's writable tree even if a mount were
+# misconfigured. A later phase mounts this read-only at /mail, a sibling of /sessions.
+agent_mail_maildir: "{{ agent_mail_home }}/mail"
+
+# Credential + mbsync config directory. A SIBLING of workspace, deliberately never
+# mounted into the container. Do NOT move this under
+# {{ agent_mail_home }}/workspace/.secrets/: that tree is bind-mounted wholesale at
+# /workspace (scripts/start_container.sh) and would be readable from inside the
+# container regardless of TUI selection -- tracked separately as issue #38.
+agent_mail_credential_dir: "{{ agent_mail_home }}/.mailsync"
+
+# Operator-supplied IMAP password. Leave undefined here -- never set a real value in
+# this repo. Supply it at deploy time via an ansible-vault-encrypted variable, e.g. a
+# group_vars/riva/vault.yml created with:
+#
+#   ansible-vault create ansible/inventory/group_vars/riva/vault.yml
+#
+# containing:
+#
+#   agent_mail_imap_password: "the real hetzner mailbox password"
+#
+# then run the playbook with --ask-vault-pass (or a vault password file). If this
+# variable is left undefined, the role installs a placeholder file at
+# {{ agent_mail_credential_dir }}/imap_password that the operator must replace by hand
+# -- with mode 0600 -- before the sync timer can authenticate.
+# agent_mail_imap_password: ""
+
+# Sync cadence. A few minutes of staleness is explicitly acceptable per the design.
+agent_mail_sync_interval: 5min
