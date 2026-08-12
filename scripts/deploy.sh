@@ -40,9 +40,10 @@ sudo chown "$AGENT_USER:$AGENT_USER" \
     "$AGENT_HOME/launcher_tui.py" \
     "$AGENT_HOME/test_container.sh" \
     "$AGENT_HOME/mcp-config.json" \
-    "$AGENT_HOME/mcp-manifest.json"
+    "$AGENT_HOME/mcp-manifest.json" \
+    "$AGENT_HOME/sync_mail.sh"
 
-sudo chmod +x "$AGENT_HOME/start_container.sh" "$AGENT_HOME/test_container.sh" "$AGENT_HOME/launcher_tui.py"
+sudo chmod +x "$AGENT_HOME/start_container.sh" "$AGENT_HOME/test_container.sh" "$AGENT_HOME/launcher_tui.py" "$AGENT_HOME/sync_mail.sh"
 
 echo "Deployed:"
 sudo ls -la "$AGENT_HOME"/*.sh "$AGENT_HOME"/*.py "$AGENT_HOME"/*.json 2>/dev/null | sed 's/^/  /'
