@@ -8,6 +8,7 @@ and the credential reader refuses a loosely-permissioned file.
 
 from __future__ import annotations
 
+import imaplib
 import json
 from email import message_from_bytes, policy
 from pathlib import Path
@@ -267,3 +268,76 @@ def test_credential_with_0600_is_read_and_stripped(tmp_path: Path):
 def test_missing_credential_is_refused(tmp_path: Path):
     with pytest.raises(ConfigError):
         read_credential(tmp_path / "absent")
+
+
+class FakeImap:
+    """Minimal IMAP double for namespace/list/create/append behaviour."""
+
+    def __init__(self, prefix=b'(("INBOX." ".")) NIL NIL', existing=()):
+        self.prefix_payload = prefix
+        self.existing = set(existing)
+        self.created: list[str] = []
+        self.subscribed: list[str] = []
+        self.appended: list[tuple[str, bytes]] = []
+
+    def namespace(self):
+        return "OK", [self.prefix_payload]
+
+    def list(self, directory='""', pattern="*"):
+        # Dovecot answers BAD "Invalid pattern" when the directory is not the
+        # literal `""`. The first version of this fake accepted anything and so
+        # hid exactly that bug; keep it strict.
+        if directory != '""':
+            raise imaplib.IMAP4.error(f'LIST command error: BAD Invalid pattern (directory={directory!r})')
+        name = pattern.strip('"')
+        return ("OK", [b'(\\HasNoChildren) "." ' + name.encode()]) if name in self.existing else ("OK", [None])
+
+    def create(self, name):
+        self.created.append(name.strip('"'))
+        self.existing.add(name.strip('"'))
+        return "OK", [b"Create completed"]
+
+    def subscribe(self, name):
+        self.subscribed.append(name.strip('"'))
+        return "OK", [b"Subscribe completed"]
+
+    def append(self, folder, flags, date, raw):
+        self.appended.append((folder, raw))
+        return "OK", [b"Append completed"]
+
+
+def _appender_with(fake, config):
+    from mail_renderer.imap_append import ImapAppender
+
+    appender = ImapAppender(config)
+    appender._imap = fake
+    appender._prefix = appender._personal_prefix()
+    return appender
+
+
+def test_drafts_folder_is_qualified_with_the_server_namespace(config: RendererConfig):
+    """Hetzner rejects a bare `Drafts`: everything lives under the INBOX. namespace.
+
+    Real failure this reproduces:
+      APPEND to Drafts returned NO: Client tried to access nonexistent namespace.
+    """
+    fake = FakeImap(existing={"INBOX.Drafts"})
+    _appender_with(fake, config).append("Drafts", b"raw message")
+    assert fake.appended[0][0] == "INBOX.Drafts"
+    assert fake.created == []  # already existed
+
+
+def test_missing_drafts_folder_is_created_and_subscribed(config: RendererConfig):
+    """A fresh mailbox has no Drafts folder, so the first APPEND must create it."""
+    fake = FakeImap(existing=set())
+    _appender_with(fake, config).append("Drafts", b"raw message")
+    assert fake.created == ["INBOX.Drafts"]
+    assert fake.subscribed == ["INBOX.Drafts"]
+    assert fake.appended[0][0] == "INBOX.Drafts"
+
+
+def test_server_without_a_namespace_prefix_is_left_alone(config: RendererConfig):
+    """Portability: a server reporting no prefix must not gain one."""
+    fake = FakeImap(prefix=b'(("" "/")) NIL NIL', existing={"Drafts"})
+    _appender_with(fake, config).append("Drafts", b"raw message")
+    assert fake.appended[0][0] == "Drafts"

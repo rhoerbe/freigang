@@ -272,6 +272,23 @@ Falls back to running `mbsync` directly when the systemd user unit is unavailabl
 The launcher runs this automatically (`--no-wait`) whenever mail is selected for a session, so mail
 dragged in moments before launching is there by the time the agent looks.
 
+### `post_drafts.sh` — post drafts now
+
+The counterpart to `sync_mail.sh`: that pulls mail in, this pushes drafts out, instead of waiting up
+to ten minutes for `mail-renderer.timer`.
+
+```bash
+scripts/post_drafts.sh              # post, wait, report posted/failed/deferred
+scripts/post_drafts.sh --agent NAME # another agent user (default: ha_agent)
+scripts/post_drafts.sh --no-wait    # fire and forget
+scripts/post_drafts.sh --quiet      # silent unless something fails
+```
+
+When drafts are rejected it names `mail-out/failed/`, where each rejection has an error file beside
+it. Both scripts share `lib_agent_systemd.sh`, which supplies the `XDG_RUNTIME_DIR` **and**
+`DBUS_SESSION_BUS_ADDRESS` that `systemctl --user` needs — without the second it fails with
+"Failed to connect to user scope bus" even though the units are healthy.
+
 ### `mail-renderer` — on the host
 
 Drains `/workspace/mail-out/`, renders RFC822, `APPEND`s to `Drafts`. Normally run by

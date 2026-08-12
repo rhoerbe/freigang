@@ -16,6 +16,10 @@
 # remove local copies of what the server already has. It never writes upward.
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib_agent_systemd.sh
+source "$SCRIPT_DIR/lib_agent_systemd.sh"
+
 AGENT_USER="ha_agent"
 WAIT=true
 QUIET=false
@@ -33,45 +37,23 @@ done
 
 say() { [[ "$QUIET" == true ]] || echo "$@"; }
 
-if ! id "$AGENT_USER" >/dev/null 2>&1; then
-    echo "ERROR: no such user: $AGENT_USER" >&2
-    exit 1
-fi
-
-AGENT_UID="$(id -u "$AGENT_USER")"
+agent_resolve_user
 MBSYNCRC="/home/$AGENT_USER/.mailsync/mbsyncrc"
 
-# Run as the agent user unless we already are it. systemd --user needs both
-# XDG_RUNTIME_DIR and the session bus address; without them systemctl reports
-# "Failed to connect to bus" even though the units are perfectly fine.
-run_as_agent() {
-    if [[ "$(id -un)" == "$AGENT_USER" ]]; then
-        env XDG_RUNTIME_DIR="/run/user/$AGENT_UID" \
-            DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$AGENT_UID/bus" "$@"
-    else
-        sudo -u "$AGENT_USER" env XDG_RUNTIME_DIR="/run/user/$AGENT_UID" \
-            DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/$AGENT_UID/bus" "$@"
-    fi
-}
-
-start_args=(systemctl --user start mbsync.service)
-[[ "$WAIT" == true ]] || start_args=(systemctl --user start --no-block mbsync.service)
-
-if run_as_agent "${start_args[@]}" 2>/dev/null; then
+if agent_start_unit mbsync.service; then
     if [[ "$WAIT" == false ]]; then
         say "mail sync started for $AGENT_USER (not waiting)"
         exit 0
     fi
-    result=$(run_as_agent systemctl --user show mbsync.service -p Result --value 2>/dev/null || echo unknown)
+    result="$(agent_unit_result mbsync.service)"
     if [[ "$result" == "success" ]]; then
         say "mail sync finished for $AGENT_USER"
         # The Near counters say what actually landed: +added *flag-changed -deleted
-        say "$(run_as_agent journalctl --user -u mbsync.service -n 20 --no-pager 2>/dev/null \
-                | grep -E 'Channels:|Boxes:' | tail -1 || true)"
+        say "$(agent_unit_log mbsync.service 20 'Channels:|Boxes:')"
         exit 0
     fi
     echo "ERROR: mbsync.service finished with Result=$result" >&2
-    run_as_agent journalctl --user -u mbsync.service -n 15 --no-pager >&2 2>/dev/null || true
+    agent_unit_log mbsync.service 15 >&2
     exit 1
 fi
 

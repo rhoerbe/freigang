@@ -8,6 +8,7 @@ container-writable tree, at append time, and is never written anywhere else.
 from __future__ import annotations
 
 import imaplib
+import re
 import ssl
 import time
 from pathlib import Path
@@ -37,12 +38,38 @@ def read_credential(path: Path) -> str:
     return password
 
 
+def resolve_folder(folder: str, prefix: str) -> str:
+    """Qualify `folder` with the server's personal namespace prefix.
+
+    Hetzner's Dovecot reports a personal namespace of `INBOX.` with `.` as the
+    delimiter, so every mailbox lives under it and a bare `Drafts` is rejected:
+
+        APPEND to Drafts returned NO: Client tried to access nonexistent
+        namespace. (Mailbox name should probably be prefixed with: INBOX.)
+
+    Servers without a prefix report an empty one and the name passes through, so
+    the configured `drafts_folder` stays portable rather than hard-coding a
+    server's layout. An already-qualified name is left alone.
+    """
+    if not prefix or folder == prefix.rstrip(".") or folder.startswith(prefix):
+        return folder
+    return f"{prefix}{folder}"
+
+
+def _quote(folder: str) -> str:
+    """Quote a mailbox name for IMAP commands (names may contain spaces)."""
+    escaped = folder.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
 class ImapAppender:
     """Opens one IMAP session per run and APPENDs each rendered draft to it."""
 
     def __init__(self, config: RendererConfig):
         self._config = config
         self._imap: imaplib.IMAP4_SSL | None = None
+        self._prefix = ""
+        self._ensured: set[str] = set()
 
     def __enter__(self) -> Self:
         password = read_credential(self._config.imap_password_file)
@@ -53,11 +80,49 @@ class ImapAppender:
                 ssl_context=ssl.create_default_context(),
             )
             self._imap.login(self._config.imap_user, password)
+            self._prefix = self._personal_prefix()
         except (OSError, imaplib.IMAP4.error, ssl.SSLError) as exc:
             raise AppendError(f"IMAP login to {self._config.imap_host} failed: {exc}") from exc
         finally:
             del password
         return self
+
+    def _personal_prefix(self) -> str:
+        """Read the personal namespace prefix, or "" if the server has none."""
+        try:
+            status, data = self._imap.namespace()
+        except (imaplib.IMAP4.error, AttributeError):
+            return ""
+        if status != "OK" or not data:
+            return ""
+        # (("INBOX." ".")) NIL NIL  ->  INBOX.
+        match = re.search(rb'\(\("([^"]*)"\s+"([^"]*)"\)\)', data[0] or b"")
+        return match.group(1).decode() if match else ""
+
+    def _ensure_folder(self, folder: str) -> None:
+        """Create (and subscribe) the folder when the server does not have it.
+
+        A fresh mailbox has no Drafts folder at all, so the first APPEND would
+        fail even once the namespace prefix is right. Creating it is the one
+        mailbox write this design makes beyond APPEND, and it is required for
+        the drafts to have anywhere to land.
+        """
+        if folder in self._ensured:
+            return
+        try:
+            # imaplib sends `LIST <directory> <pattern>` verbatim; the directory
+            # must be the literal two-character string `""`, not an empty Python
+            # string, or Dovecot answers BAD "Invalid pattern".
+            status, data = self._imap.list('""', _quote(folder))
+            exists = status == "OK" and any(row for row in (data or []) if row)
+            if not exists:
+                create_status, create_data = self._imap.create(_quote(folder))
+                if create_status != "OK":
+                    raise AppendError(f"could not create {folder}: {create_data!r}")
+                self._imap.subscribe(_quote(folder))
+        except imaplib.IMAP4.error as exc:
+            raise AppendError(f"could not prepare {folder}: {exc}") from exc
+        self._ensured.add(folder)
 
     def __exit__(
         self,
@@ -80,6 +145,8 @@ class ImapAppender:
     def append(self, folder: str, raw: bytes) -> None:
         if self._imap is None:
             raise AppendError("IMAP session is not open")
+        folder = resolve_folder(folder, self._prefix)
+        self._ensure_folder(folder)
         try:
             status, data = self._imap.append(
                 folder,
