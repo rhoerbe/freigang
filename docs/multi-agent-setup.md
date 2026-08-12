@@ -406,26 +406,32 @@ agent_mail_credential_dir: "{{ agent_mail_home }}/.mailsync"
 
 Wire it into `ansible/playbooks/agent-setup.yml` for the target agent, then run the playbook.
 
-### 3. Supply the IMAP credential via ansible-vault
+### 3. Place the IMAP credential by hand
 
-The role never accepts the real mailbox password as a plain variable in the repo. Create a
-vaulted variable file for the target host and supply `agent_mail_imap_password` there:
+**Do not add an ansible-vault file to this repo for the mail password.** freigang is a *public*
+repo: committed vault ciphertext is published permanently and can be attacked offline at leisure,
+and the vault passphrase on these control nodes is shared with a private repo's vault. A public
+repo turns a shared passphrase into a shared liability. The mail credential is also
+deployment-specific, so it does not belong in a general-purpose project at all.
 
-```bash
-ansible-vault create ansible/inventory/group_vars/riva/vault.yml
-```
-
-```yaml
-agent_mail_imap_password: "<the real mailbox password>"
-```
+Place it once, directly on the target host:
 
 ```bash
-ansible-playbook -i ansible/inventory/hosts.yml ansible/playbooks/agent-setup.yml --ask-vault-pass
+read -rs pw && printf '%s' "$pw" \
+  | sudo install -o ha_agent -g ha_agent -m600 /dev/stdin \
+    /home/ha_agent/.mailsync/imap_password
 ```
 
-If `agent_mail_imap_password` is left undefined, the role installs a placeholder credential file
-instead (mode 0600) and never overwrites a real credential already on disk - so re-running the
-playbook without the vaulted password cannot clobber a working setup.
+`read -rs` keeps the password off the terminal and out of shell history; `printf '%s'` writes no
+trailing newline, which keeps mbsync's `PassCmd "cat ..."` clean.
+
+The role installs a placeholder with `force: false` and enforces mode 0600, so re-running the
+playbook never clobbers a hand-placed password. A host rebuild means re-copying it from your
+password manager - cheap here, since rotating an IMAP password destroys nothing (unlike, say, a
+Matrix macaroon key, where rotation logs out every device).
+
+If you do want reproducible deploys, `agent_mail_imap_password` is still honoured when passed in
+(`-e @/path/to/vault.yml --ask-vault-pass`) - keep that vault in a **private** repo, never here.
 
 ### 4. Confirm on the host
 
