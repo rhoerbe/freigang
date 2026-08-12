@@ -22,7 +22,10 @@ DEPLOY_STAMP="$(date '+%Y-%m-%d %H:%M:%S')"
 # owns the actual migration of pre-existing secrets on hosts that predate #38. Idempotent:
 # a no-op once $OLD_SECRETS_DIR is gone.
 migrate_secrets() {
-    if [[ ! -d "$OLD_SECRETS_DIR" ]]; then
+    # AGENT_HOME/workspace is mode 0700 (owner ha_agent only), so a plain [[ -d ]]
+    # test from the deploying user (even a group member) silently sees "absent" on
+    # EACCES and would treat a still-pending migration as a no-op. Use sudo test.
+    if ! sudo test -d "$OLD_SECRETS_DIR"; then
         return 0
     fi
 
@@ -67,7 +70,7 @@ migrate_secrets() {
     fi
     sudo rmdir "$OLD_SECRETS_DIR"
 
-    if [[ -d "$OLD_SECRETS_DIR" ]]; then
+    if sudo test -d "$OLD_SECRETS_DIR"; then
         echo "ERROR: $OLD_SECRETS_DIR still exists after migration" >&2
         exit 1
     fi
