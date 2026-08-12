@@ -30,10 +30,12 @@
     group: "{{ agent_username }}"
     mode: "{{ item.mode }}"
   loop:
-    - { src: "{{ playbook_dir }}/../../mcp-config.json", dest: ".claude/claude_code_config.json", mode: "0644" }
-    - { src: "{{ playbook_dir }}/../../mcp-config.json", dest: "mcp-config.json", mode: "0644" }
+    - { src: "{{ playbook_dir }}/../../containerize/mcp-config.json", dest: ".claude/claude_code_config.json", mode: "0644" }
+    - { src: "{{ playbook_dir }}/../../containerize/mcp-config.json", dest: "mcp-config.json", mode: "0644" }
+    - { src: "{{ playbook_dir }}/../../containerize/mcp-manifest.json", dest: "mcp-manifest.json", mode: "0644" }
     - { src: "{{ playbook_dir }}/../../containerize/build.sh", dest: "build.sh", mode: "0755" }
     - { src: "{{ playbook_dir }}/../../containerize/Dockerfile", dest: "Dockerfile", mode: "0644" }
     - { src: "{{ playbook_dir }}/../../containerize/test_container.sh", dest: "test_container.sh", mode: "0755" }
     - { src: "{{ playbook_dir }}/../../scripts/start_container.sh", dest: "start_container.sh", mode: "0755" }
     - { src: "{{ playbook_dir }}/../../scripts/config.sh", dest: "config.sh", mode: "0755" }
+    - { src: "{{ playbook_dir }}/../../scripts/launcher_tui.py", dest: "launcher_tui.py", mode: "0755" }
