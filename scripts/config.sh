@@ -25,6 +25,13 @@ if [[ -n "$AGENT_CONFIG_FILE" ]] && [[ -f "$AGENT_CONFIG_FILE" ]]; then
         SELECTABLE_SECRETS+=("${name}:${display}")
     done
 
+    # Mail capability block (optional). Absent `mail:` means no mail capability at all -
+    # MAIL_ENABLED stays false and no mail TUI rows / mount are ever offered (issue #37).
+    MAIL_ENABLED=$(yq eval '.mail.enabled // false' "$AGENT_CONFIG_FILE")
+    MAIL_MAILDIR=$(yq eval '.mail.maildir // "mail"' "$AGENT_CONFIG_FILE")
+    MAIL_IMAP_HOST=$(yq eval '.mail.imap_host // ""' "$AGENT_CONFIG_FILE")
+    MAIL_DRAFTS_FOLDER=$(yq eval '.mail.drafts_folder // "Drafts"' "$AGENT_CONFIG_FILE")
+
 else
     # Legacy mode: Hardcoded values
     REPO_NAME="hadmin"
@@ -47,6 +54,12 @@ else
         "mqtt_username:MQTT user"
         "mqtt_password:MQTT pass"
     )
+
+    # Legacy mode has no `mail:` block - mail capability is off, unconditionally.
+    MAIL_ENABLED="false"
+    MAIL_MAILDIR="mail"
+    MAIL_IMAP_HOST=""
+    MAIL_DRAFTS_FOLDER="Drafts"
 fi
 
 # Default Claude arguments (common to both modes)

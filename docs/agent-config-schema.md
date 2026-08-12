@@ -48,6 +48,13 @@ defaults:
 # Policy file reference (required)
 policy_file: string                 # Absolute path to policy YAML file
 
+# Mail capability (optional)
+mail:
+  enabled: boolean                  # Whether this agent may read mail / propose drafts
+  maildir: string                   # Dir name under linux_user.home holding the synced Maildir
+  imap_host: string                 # IMAP server hostname (informational; host sync/renderer use)
+  drafts_folder: string             # IMAP folder the draft renderer appends generated drafts to
+
 # Available resources for TUI (required)
 resources:
   # Secrets that can be selected in TUI
@@ -198,6 +205,60 @@ resources:
 - **Example**: `"/etc/freigang/policies/ha_agent_policy.yaml"`
 - **Validation**: File must exist and be readable.
 
+### `mail` Object (optional)
+
+Deliberately minimal -- kept to the four fields below so that adding a second mail-capable agent
+never requires a schema refactor. No poll intervals, filters, or multi-account support.
+
+Absent entirely means the agent has no mail capability: no mail rows in the TUI, and no `/mail`
+mount is ever offered, regardless of any per-session toggle. When present, `mail.enabled: true` is
+what makes the (default-off) TUI toggle appear at all; the TUI toggle itself then controls whether
+`/mail` is actually mounted for a given session. The container itself never speaks IMAP -- see
+Component 1/2 of the design in issue #37 for the host-side sync that populates the Maildir, and
+Component 4 for the draft-renderer that reads `/workspace/mail-out/`.
+
+#### `mail.enabled`
+- **Type**: boolean
+- **Required**: No (whole `mail` block is optional)
+- **Description**: Whether this agent may be offered mail access at all. Gates the TUI toggle's
+  visibility; it does not itself mount anything.
+- **Example**: `true`
+- **Default**: `false` (also the effective value when the `mail` block is absent)
+
+#### `mail.maildir`
+- **Type**: string
+- **Required**: No
+- **Description**: Directory name under `linux_user.home` holding the Maildir kept in sync by the
+  host-side down-sync (see #37 Component 1). Mounted read-only inside the container at `/mail`, as
+  a sibling of `/sessions` -- **not** nested under `/workspace`, since `linux_user.home/workspace`
+  is already bind-mounted wholesale at `/workspace`.
+- **Example**: `"mail"` (resolves to `$AGENT_HOME/mail`)
+- **Default**: `"mail"`
+
+#### `mail.imap_host`
+- **Type**: string
+- **Required**: No
+- **Description**: IMAP server hostname for this agent's mailbox. Informational at this layer --
+  consumed by the host-side sync and draft-renderer (#37 Components 1/4), not by the mount itself.
+- **Example**: `"www646.your-server.de"`
+
+#### `mail.drafts_folder`
+- **Type**: string
+- **Required**: No
+- **Description**: IMAP folder name the host-side draft renderer `APPEND`s generated drafts to.
+  Informational at this layer -- consumed by #37 Component 4.
+- **Example**: `"Drafts"`
+- **Default**: `"Drafts"`
+
+**Example**:
+```yaml
+mail:
+  enabled: true
+  maildir: mail
+  imap_host: www646.your-server.de
+  drafts_folder: Drafts
+```
+
 ### `resources` Object
 
 #### `resources.selectable_secrets`
@@ -341,6 +402,10 @@ When an agent config is loaded, these environment variables are set:
 - `DEFAULT_BROWSER_MODE` - Default browser mode
 - `DEFAULT_VNC` - Default VNC setting
 - `POLICY_FILE` - Policy file path
+- `MAIL_ENABLED` - Whether the agent config has `mail.enabled: true` (`false` if `mail` is absent)
+- `MAIL_MAILDIR` - `mail.maildir` value (directory name under `AGENT_HOME`; default `mail`)
+- `MAIL_IMAP_HOST` - `mail.imap_host` value, informational
+- `MAIL_DRAFTS_FOLDER` - `mail.drafts_folder` value (default `Drafts`), informational
 
 ## Future Extensions
 

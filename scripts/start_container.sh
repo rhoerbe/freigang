@@ -126,6 +126,13 @@ load_agent_config() {
 
     POLICY_FILE=$(yq eval '.policy_file' "$config_file")
 
+    # Mail capability block (optional, issue #37). Absent `mail:` means MAIL_ENABLED=false,
+    # so no mail TUI rows and no /mail mount are ever offered for this agent.
+    MAIL_ENABLED=$(yq eval '.mail.enabled // false' "$config_file")
+    MAIL_MAILDIR=$(yq eval '.mail.maildir // "mail"' "$config_file")
+    MAIL_IMAP_HOST=$(yq eval '.mail.imap_host // ""' "$config_file")
+    MAIL_DRAFTS_FOLDER=$(yq eval '.mail.drafts_folder // "Drafts"' "$config_file")
+
     echo "Loaded config for agent: $AGENT_ID ($AGENT_DESC)"
 }
 
@@ -240,6 +247,7 @@ SELECTED_MCP_SERVER_NAMES=""  # For display only - actual config in Claude's set
 SELECTED_BROWSER_MODE="none"
 SELECTED_ENABLE_VNC="false"
 SELECTED_WEB_RESOURCE_GROUPS=""
+SELECTED_MAIL_ENABLED="false"  # Per-session mail toggle, default off (issue #37)
 SKIP_TUI=false
 VALIDATE_AUTH=false   # --validate-auth: skip TUI, run an in-container auth diagnostic
 
@@ -373,6 +381,12 @@ export_config_for_tui() {
         secrets_str+="$secret"
     done
     export SELECTABLE_SECRETS="$secrets_str"
+
+    # Mail capability (issue #37) - config-level gate for the TUI's per-session toggle.
+    export MAIL_ENABLED="${MAIL_ENABLED:-false}"
+    export MAIL_MAILDIR="${MAIL_MAILDIR:-mail}"
+    export MAIL_IMAP_HOST="${MAIL_IMAP_HOST:-}"
+    export MAIL_DRAFTS_FOLDER="${MAIL_DRAFTS_FOLDER:-Drafts}"
 }
 
 run_python_tui() {
@@ -424,6 +438,7 @@ run_python_tui() {
     session_arg=$(echo "$tui_output" | $py -c "import sys, json; d=json.load(sys.stdin); print(d.get('session_arg', ''))")
     browser_mode=$(echo "$tui_output" | $py -c "import sys, json; d=json.load(sys.stdin); print(d.get('browser_mode', 'none'))")
     enable_vnc=$(echo "$tui_output" | $py -c "import sys, json; d=json.load(sys.stdin); print(str(d.get('enable_vnc', False)).lower())")
+    mail_enabled=$(echo "$tui_output" | $py -c "import sys, json; d=json.load(sys.stdin); print(str(d.get('mail_enabled', False)).lower())")
 
     # Extract MCP server names for display (actual config is written to Claude's settings.json by TUI)
     mcp_names=$(echo "$tui_output" | $py -c "import sys, json; servers=json.load(sys.stdin).get('mcp_servers', []); print(' '.join(s['name'] if isinstance(s,dict) else s for s in servers))")
@@ -437,6 +452,13 @@ run_python_tui() {
     SELECTED_BROWSER_MODE="$browser_mode"
     SELECTED_ENABLE_VNC="$enable_vnc"
     SELECTED_WEB_RESOURCE_GROUPS="$web_groups"
+    # Config-level gate wins even if a stale preference/JSON says true (issue #37: the
+    # /mail mount must be absent whenever the agent config has no mail.enabled: true).
+    if [[ "$MAIL_ENABLED" == "true" ]]; then
+        SELECTED_MAIL_ENABLED="$mail_enabled"
+    else
+        SELECTED_MAIL_ENABLED="false"
+    fi
 
     return 0
 }
@@ -469,8 +491,11 @@ show_final_command() {
     local web_label="${SELECTED_WEB_RESOURCE_GROUPS:-all}"
     [[ -z "$WEB_RESOURCES_PATH" ]] && web_label="n/a"
 
+    local mail_label="off"
+    [[ "$SELECTED_MAIL_ENABLED" == "true" ]] && mail_label="on"
+
     echo "Starting: \`claude $claude_args\`"
-    echo "MCP Servers: ${SELECTED_MCP_SERVER_NAMES:-none}  |  Secrets: ${SELECTED_SECRETS[*]:-none}  |  Browser: $browser_label  |  Web Filter: $web_label"
+    echo "MCP Servers: ${SELECTED_MCP_SERVER_NAMES:-none}  |  Secrets: ${SELECTED_SECRETS[*]:-none}  |  Browser: $browser_label  |  Web Filter: $web_label  |  Mail: $mail_label"
 }
 
 run_tui() {
@@ -505,6 +530,21 @@ is_secret_selected() {
         [[ "$s" == "$secret_name" ]] && return 0
     done
     return 1
+}
+
+# Build the /mail bind-mount (issue #37): single source for both the direct-command
+# path and the main launch path below, so this security-relevant logic cannot diverge
+# between the two call sites. Sets the global MAIL_MOUNT, sibling of /sessions,
+# read-only, present only when the agent config has mail.enabled: true AND the
+# per-session toggle selected it this run. Off by default - when the toggle is off
+# (or the agent has no mail: block) MAIL_MOUNT is set to the empty string, so the
+# mount is absent entirely, not mounted-but-empty: zero bytes of mail reachable.
+build_mail_mount() {
+    MAIL_MOUNT=""
+    if [[ "$MAIL_ENABLED" == "true" && "$SELECTED_MAIL_ENABLED" == "true" ]]; then
+        mkdir -p "$AGENT_HOME/$MAIL_MAILDIR"
+        MAIL_MOUNT="-v $AGENT_HOME/$MAIL_MAILDIR:/mail:Z,ro"
+    fi
 }
 
 # Preflight the injected Anthropic token so a dead/expired credential fails loudly
@@ -708,6 +748,12 @@ if [[ $# -gt 0 && "$1" != "--"* ]]; then
         WEB_RESOURCES_MOUNT="-v $WEB_RESOURCES_PATH:/etc/freigang/policies/${AGENT_ID}_web_resources.yaml:Z,ro"
     fi
 
+    # Build /mail bind-mount (issue #37): see build_mail_mount(). Direct-command
+    # invocations (this branch) skip the TUI, so SELECTED_MAIL_ENABLED stays at its
+    # "false" default here - mail stays unmounted for `start-ha-agent bash` etc.
+    # unless a future flag opts in.
+    build_mail_mount
+
     # Start container with the provided command
     exec podman --cgroup-manager=cgroupfs run --rm -it \
         --name "$CONTAINER_NAME" \
@@ -716,6 +762,7 @@ if [[ $# -gt 0 && "$1" != "--"* ]]; then
         ${SECCOMP_PROFILE:+--security-opt seccomp="$SECCOMP_PROFILE"} \
         ${VNC_PORT_MAPPING} \
         ${WEB_RESOURCES_MOUNT} \
+        ${MAIL_MOUNT} \
         -v "$AGENT_HOME/workspace":/workspace:Z \
         -v "$AGENT_HOME/sessions":/sessions:Z \
         -w "/workspace/$REPO_NAME" \
@@ -842,6 +889,10 @@ elif [[ -n "$AGENT_ID" && -n "$WEB_RESOURCES_PATH" && -f "$WEB_RESOURCES_PATH" ]
     WEB_RESOURCES_MOUNT="-v $WEB_RESOURCES_PATH:/etc/freigang/policies/${AGENT_ID}_web_resources.yaml:Z,ro"
 fi
 
+# Build /mail bind-mount (issue #37): see build_mail_mount(). This is the main launch
+# path, run after the TUI (or its skip-path defaults) has settled SELECTED_MAIL_ENABLED.
+build_mail_mount
+
 # Container command: normal interactive claude, or (--validate-auth) a one-shot
 # auth diagnostic that prints the injected token state and probes auth, then exits.
 TTY_FLAGS="-it"
@@ -894,6 +945,7 @@ exec podman --cgroup-manager=cgroupfs run --rm $TTY_FLAGS \
     ${SECCOMP_PROFILE:+--security-opt seccomp="$SECCOMP_PROFILE"} \
     ${VNC_PORT_MAPPING} \
     ${WEB_RESOURCES_MOUNT} \
+    ${MAIL_MOUNT} \
     -v "$AGENT_HOME/workspace":/workspace:Z \
     -v "$AGENT_HOME/sessions":/sessions:Z \
     -w "/workspace/$REPO_NAME" \
