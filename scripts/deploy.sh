@@ -27,6 +27,8 @@ sudo sed -i \
 sudo cp "$SCRIPT_DIR/config.sh" "$AGENT_HOME/"
 sudo cp "$SCRIPT_DIR/launcher_tui.py" "$AGENT_HOME/"
 sudo cp "$SCRIPT_DIR/sync_mail.sh" "$AGENT_HOME/"
+sudo cp "$SCRIPT_DIR/post_drafts.sh" "$AGENT_HOME/"
+sudo cp "$SCRIPT_DIR/lib_agent_systemd.sh" "$AGENT_HOME/"
 
 # Scripts from containerize/
 sudo cp "$REPO_ROOT/containerize/test_container.sh" "$AGENT_HOME/"
@@ -41,9 +43,11 @@ sudo chown "$AGENT_USER:$AGENT_USER" \
     "$AGENT_HOME/test_container.sh" \
     "$AGENT_HOME/mcp-config.json" \
     "$AGENT_HOME/mcp-manifest.json" \
-    "$AGENT_HOME/sync_mail.sh"
+    "$AGENT_HOME/sync_mail.sh" \
+    "$AGENT_HOME/post_drafts.sh" \
+    "$AGENT_HOME/lib_agent_systemd.sh"
 
-sudo chmod +x "$AGENT_HOME/start_container.sh" "$AGENT_HOME/test_container.sh" "$AGENT_HOME/launcher_tui.py" "$AGENT_HOME/sync_mail.sh"
+sudo chmod +x "$AGENT_HOME/start_container.sh" "$AGENT_HOME/test_container.sh" "$AGENT_HOME/launcher_tui.py" "$AGENT_HOME/sync_mail.sh" "$AGENT_HOME/post_drafts.sh"
 
 echo "Deployed:"
 sudo ls -la "$AGENT_HOME"/*.sh "$AGENT_HOME"/*.py "$AGENT_HOME"/*.json 2>/dev/null | sed 's/^/  /'
