@@ -208,6 +208,11 @@ else
     fi
 fi
 
+# Secret store lives outside the bind-mounted workspace tree (issue #38) so a
+# container only ever sees the secrets the TUI selected, injected as env vars -
+# never the whole secret directory via the /workspace mount.
+SECRETS_DIR="$AGENT_HOME/.secrets"
+
 show_deploy_provenance
 
 # Derive web access filter paths (set after agent config is loaded)
@@ -219,7 +224,7 @@ if [[ -n "$AGENT_ID" ]]; then
     elif [[ -f "$SCRIPT_DIR/../policies/${AGENT_ID}_web_resources.yaml" ]]; then
         WEB_RESOURCES_PATH="$(cd "$SCRIPT_DIR/.." && pwd)/policies/${AGENT_ID}_web_resources.yaml"
     fi
-    ACTIVE_WEB_RESOURCES_PATH="$AGENT_HOME/workspace/.secrets/active_web_resources.yaml"
+    ACTIVE_WEB_RESOURCES_PATH="$SECRETS_DIR/active_web_resources.yaml"
 fi
 
 # Determine paths based on environment (development repo vs deployed agent home)
@@ -701,8 +706,8 @@ load_selected_secrets() {
     # This token is inference-only and cannot do Remote Control; for that use the
     # in-container `claude-rc` helper (Tier-2), which unsets this var first.
     CLAUDE_OAUTH_TOKEN=""
-    local setup_token="$AGENT_HOME/workspace/.secrets/claude_setup_token"
-    local legacy_token="$AGENT_HOME/workspace/.secrets/claude_oauth_token"
+    local setup_token="$SECRETS_DIR/claude_setup_token"
+    local legacy_token="$SECRETS_DIR/claude_oauth_token"
     if [[ -f "$setup_token" ]]; then
         CLAUDE_OAUTH_TOKEN=$(cat "$setup_token")
     elif [[ -f "$legacy_token" ]]; then
@@ -726,20 +731,20 @@ load_selected_secrets() {
     MQTT_USER=""
     MQTT_PASS=""
 
-    if is_secret_selected "github_token" && [[ -f "$AGENT_HOME/workspace/.secrets/github_token" ]]; then
-        GH_TOKEN=$(cat "$AGENT_HOME/workspace/.secrets/github_token")
+    if is_secret_selected "github_token" && [[ -f "$SECRETS_DIR/github_token" ]]; then
+        GH_TOKEN=$(cat "$SECRETS_DIR/github_token")
     fi
 
-    if is_secret_selected "ha_access_token" && [[ -f "$AGENT_HOME/workspace/.secrets/ha_access_token" ]]; then
-        HA_ACCESS_TOKEN=$(cat "$AGENT_HOME/workspace/.secrets/ha_access_token")
+    if is_secret_selected "ha_access_token" && [[ -f "$SECRETS_DIR/ha_access_token" ]]; then
+        HA_ACCESS_TOKEN=$(cat "$SECRETS_DIR/ha_access_token")
     fi
 
-    if is_secret_selected "mqtt_username" && [[ -f "$AGENT_HOME/workspace/.secrets/mqtt_username" ]]; then
-        MQTT_USER=$(cat "$AGENT_HOME/workspace/.secrets/mqtt_username")
+    if is_secret_selected "mqtt_username" && [[ -f "$SECRETS_DIR/mqtt_username" ]]; then
+        MQTT_USER=$(cat "$SECRETS_DIR/mqtt_username")
     fi
 
-    if is_secret_selected "mqtt_password" && [[ -f "$AGENT_HOME/workspace/.secrets/mqtt_password" ]]; then
-        MQTT_PASS=$(cat "$AGENT_HOME/workspace/.secrets/mqtt_password")
+    if is_secret_selected "mqtt_password" && [[ -f "$SECRETS_DIR/mqtt_password" ]]; then
+        MQTT_PASS=$(cat "$SECRETS_DIR/mqtt_password")
     fi
 }
 

@@ -94,7 +94,7 @@ mcp_servers:
       - /tmp
 
 secrets:
-  storage_path: /home/myagent/workspace/.secrets
+  storage_path: /home/myagent/.secrets
   allowed:
     - github_token
     - custom_api_key
@@ -351,11 +351,10 @@ These hold regardless of configuration and are enforced structurally, not by pol
   use, and the container has no network route to the mail server. All IMAP traffic - both the
   down-sync and the `Drafts` `APPEND` - happens on the host, as the host agent account.
 - **The credential lives outside the mounted tree.** The IMAP password sits at
-  `$AGENT_HOME/.mailsync/` (mode 0600), a sibling of `workspace` and `mail` that no `-v` flag in
-  `scripts/start_container.sh` ever references, so it is unreadable from inside a running
-  container regardless of TUI selection. (Deliberately not under
-  `$AGENT_HOME/workspace/.secrets/`, which is inside the wholesale `/workspace` mount and readable
-  from the container regardless of TUI selection - see issue #38.)
+  `$AGENT_HOME/.mailsync/` (mode 0600), a sibling of `workspace`, `mail`, and `.secrets` that no
+  `-v` flag in `scripts/start_container.sh` ever references, so it is unreadable from inside a
+  running container regardless of TUI selection. (Same reasoning that moved `.secrets/` itself out
+  from under `$AGENT_HOME/workspace/` and into `$AGENT_HOME/.secrets/` - see issue #38.)
 - **Closed header allowlist on the way out.** The host-side draft renderer builds every message
   with `email.message.EmailMessage`, never hand-formatted strings, and only `From`/`To`
   (hard-coded, not agent input), `Date` (generated), `Subject` and `In-Reply-To` (the agent's only

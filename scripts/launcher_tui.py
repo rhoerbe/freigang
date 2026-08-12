@@ -597,8 +597,10 @@ def load_config() -> dict:
         default_mcp_str = os.environ.get("DEFAULT_MCP_SERVERS", "")
         default_mcp_servers = [m.strip() for m in default_mcp_str.split(",") if m.strip()] if default_mcp_str else DEFAULT_MCP_ENABLED
 
-    # Selectable secrets (shown in TUI for user selection)
-    secrets_dir = Path(agent_home) / "workspace" / ".secrets"
+    # Selectable secrets (shown in TUI for user selection). The secret store lives
+    # outside the bind-mounted workspace tree (issue #38) so a container only ever
+    # sees the secrets actually selected, injected as env vars by start_container.sh.
+    secrets_dir = Path(agent_home) / ".secrets"
     selectable_secrets_str = os.environ.get("SELECTABLE_SECRETS", "github_token:GitHub token|ha_access_token:HA token|mqtt_username:MQTT user|mqtt_password:MQTT pass")
 
     secrets = []

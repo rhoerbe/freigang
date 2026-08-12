@@ -9,6 +9,9 @@ set -e
 
 AGENT_HOME="/home/ha_agent"
 CONTAINER_NAME="claude-ha-agent"
+# Secret store lives outside the bind-mounted workspace tree (issue #38); these are
+# host-side preflight reads only, never mounted into the container as a directory.
+SECRETS_DIR="$AGENT_HOME/.secrets"
 
 run_preflight_checks() {
     echo -n "Preflight checks... "
@@ -20,8 +23,8 @@ run_preflight_checks() {
         { echo "ERROR: image '$CONTAINER_NAME' not found"; exit 1; }
 
     for f in github_token ha_access_token; do
-        [[ -f "$AGENT_HOME/workspace/.secrets/$f" ]] || \
-            { echo "ERROR: $AGENT_HOME/workspace/.secrets/$f not found"; exit 1; }
+        [[ -f "$SECRETS_DIR/$f" ]] || \
+            { echo "ERROR: $SECRETS_DIR/$f not found"; exit 1; }
     done
     # anthropic_api_key check removed - using OAuth token instead
 
@@ -29,9 +32,9 @@ run_preflight_checks() {
 }
 
 run_network_tests() {
-    GH_TOKEN=$(cat "$AGENT_HOME/workspace/.secrets/github_token")
-    # ANTHROPIC_API_KEY=$(cat "$AGENT_HOME/workspace/.secrets/anthropic_api_key")  # using OAuth token instead
-    HA_ACCESS_TOKEN=$(cat "$AGENT_HOME/workspace/.secrets/ha_access_token")
+    GH_TOKEN=$(cat "$SECRETS_DIR/github_token")
+    # ANTHROPIC_API_KEY=$(cat "$SECRETS_DIR/anthropic_api_key")  # using OAuth token instead
+    HA_ACCESS_TOKEN=$(cat "$SECRETS_DIR/ha_access_token")
 
     podman --cgroup-manager=cgroupfs rm -f "$CONTAINER_NAME-test" 2>/dev/null || true
 

@@ -15,7 +15,7 @@ set -euo pipefail
 SRC="${CLAUDE_CREDENTIALS:-$HOME/.claude/.credentials.json}"
 AGENT_USER="${AGENT_USER:-ha_agent}"
 AGENT_HOME="${AGENT_HOME:-/home/$AGENT_USER}"
-DEST="$AGENT_HOME/workspace/.secrets/claude_oauth_token"
+DEST="$AGENT_HOME/.secrets/claude_oauth_token"
 
 if [[ ! -f "$SRC" ]]; then
     echo "ERROR: $SRC not found - log in on the host with /login first." >&2

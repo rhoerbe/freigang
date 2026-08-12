@@ -347,7 +347,7 @@ mcp_servers:
       - /tmp
 
 secrets:
-  storage_path: /home/ha_agent/workspace/.secrets
+  storage_path: /home/ha_agent/.secrets
   allowed:
     - github_token
     - ha_access_token

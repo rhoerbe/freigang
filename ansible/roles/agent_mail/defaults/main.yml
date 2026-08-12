@@ -30,9 +30,11 @@ agent_mail_maildir: "{{ agent_mail_home }}/mail"
 
 # Credential + mbsync config directory. A SIBLING of workspace, deliberately never
 # mounted into the container. Do NOT move this under
-# {{ agent_mail_home }}/workspace/.secrets/: that tree is bind-mounted wholesale at
-# /workspace (scripts/start_container.sh) and would be readable from inside the
-# container regardless of TUI selection -- tracked separately as issue #38.
+# {{ agent_mail_home }}/workspace/.secrets/: that path no longer even exists as a
+# secret store (issue #38 moved it to {{ agent_mail_home }}/.secrets/, a sibling of
+# workspace), but workspace itself is still bind-mounted wholesale at /workspace
+# (scripts/start_container.sh) and anything placed under it would be readable from
+# inside the container regardless of TUI selection.
 agent_mail_credential_dir: "{{ agent_mail_home }}/.mailsync"
 
 # Operator-supplied IMAP password. Leave undefined here -- never set a real value in
