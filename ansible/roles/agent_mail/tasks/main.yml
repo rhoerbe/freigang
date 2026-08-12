@@ -1,0 +1,105 @@
+- name: Install isync (provides mbsync)
+  ansible.builtin.apt:
+    name: isync
+    state: present
+    update_cache: true
+
+- name: Create agent mail Maildir (down-sync target, outside workspace)
+  ansible.builtin.file:
+    path: "{{ agent_mail_maildir }}"
+    state: directory
+    owner: "{{ agent_mail_username }}"
+    group: "{{ agent_mail_username }}"
+    mode: "0700"
+
+- name: Create mail credential directory (sibling of workspace, never mounted)
+  ansible.builtin.file:
+    path: "{{ agent_mail_credential_dir }}"
+    state: directory
+    owner: "{{ agent_mail_username }}"
+    group: "{{ agent_mail_username }}"
+    mode: "0700"
+
+- name: Deploy mbsync configuration (one-way DOWN only, no upward flag sync)
+  ansible.builtin.template:
+    src: mbsyncrc.j2
+    dest: "{{ agent_mail_credential_dir }}/mbsyncrc"
+    owner: "{{ agent_mail_username }}"
+    group: "{{ agent_mail_username }}"
+    mode: "0600"
+  notify: Restart agent mail timer
+
+- name: Install operator-supplied IMAP credential (only if a password variable was passed in)
+  ansible.builtin.copy:
+    content: "{{ agent_mail_imap_password }}"
+    dest: "{{ agent_mail_credential_dir }}/imap_password"
+    owner: "{{ agent_mail_username }}"
+    group: "{{ agent_mail_username }}"
+    mode: "0600"
+  when: agent_mail_imap_password is defined
+  no_log: true
+
+- name: Install placeholder IMAP credential (force=false: never clobbers a hand-placed password)
+  ansible.builtin.template:
+    src: imap_password_placeholder.j2
+    dest: "{{ agent_mail_credential_dir }}/imap_password"
+    owner: "{{ agent_mail_username }}"
+    group: "{{ agent_mail_username }}"
+    mode: "0600"
+    force: false
+  when: agent_mail_imap_password is not defined
+
+- name: Look up UID for systemd --user of {{ agent_mail_username }}
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ agent_mail_username }}"
+
+- name: Set agent_mail_uid fact
+  ansible.builtin.set_fact:
+    agent_mail_uid: "{{ ansible_facts.getent_passwd[agent_mail_username][1] }}"
+
+- name: Create systemd user unit directory
+  ansible.builtin.file:
+    path: "{{ agent_mail_home }}/.config/systemd/user"
+    state: directory
+    owner: "{{ agent_mail_username }}"
+    group: "{{ agent_mail_username }}"
+    mode: "0700"
+
+- name: Deploy mbsync systemd user service (down-sync, runs on the timer below)
+  ansible.builtin.template:
+    src: mbsync.service.j2
+    dest: "{{ agent_mail_home }}/.config/systemd/user/mbsync.service"
+    owner: "{{ agent_mail_username }}"
+    group: "{{ agent_mail_username }}"
+    mode: "0644"
+  notify: Restart agent mail timer
+
+- name: Deploy mbsync systemd user timer
+  ansible.builtin.template:
+    src: mbsync.timer.j2
+    dest: "{{ agent_mail_home }}/.config/systemd/user/mbsync.timer"
+    owner: "{{ agent_mail_username }}"
+    group: "{{ agent_mail_username }}"
+    mode: "0644"
+  notify: Restart agent mail timer
+
+- name: Reload systemd --user daemon for {{ agent_mail_username }}
+  ansible.builtin.systemd:
+    daemon_reload: true
+    scope: user
+  become: true
+  become_user: "{{ agent_mail_username }}"
+  environment:
+    XDG_RUNTIME_DIR: "/run/user/{{ agent_mail_uid }}"
+
+- name: Enable and start mbsync timer for {{ agent_mail_username }}
+  ansible.builtin.systemd:
+    name: mbsync.timer
+    scope: user
+    enabled: true
+    state: started
+  become: true
+  become_user: "{{ agent_mail_username }}"
+  environment:
+    XDG_RUNTIME_DIR: "/run/user/{{ agent_mail_uid }}"

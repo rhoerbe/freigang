@@ -4,3 +4,4 @@
 
   roles:
     - agent_user
+    - agent_mail
