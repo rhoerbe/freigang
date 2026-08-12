@@ -39,3 +39,4 @@
     - { src: "{{ playbook_dir }}/../../scripts/start_container.sh", dest: "start_container.sh", mode: "0755" }
     - { src: "{{ playbook_dir }}/../../scripts/config.sh", dest: "config.sh", mode: "0755" }
     - { src: "{{ playbook_dir }}/../../scripts/launcher_tui.py", dest: "launcher_tui.py", mode: "0755" }
+    - { src: "{{ playbook_dir }}/../../scripts/sync_mail.sh", dest: "sync_mail.sh", mode: "0755" }

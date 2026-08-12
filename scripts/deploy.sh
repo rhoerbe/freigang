@@ -26,6 +26,7 @@ sudo sed -i \
     "$AGENT_HOME/start_container.sh"
 sudo cp "$SCRIPT_DIR/config.sh" "$AGENT_HOME/"
 sudo cp "$SCRIPT_DIR/launcher_tui.py" "$AGENT_HOME/"
+sudo cp "$SCRIPT_DIR/sync_mail.sh" "$AGENT_HOME/"
 
 # Scripts from containerize/
 sudo cp "$REPO_ROOT/containerize/test_container.sh" "$AGENT_HOME/"

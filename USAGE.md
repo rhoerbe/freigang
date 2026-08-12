@@ -252,6 +252,26 @@ Behaviour worth knowing before it surprises you:
   destination name is computed by the tool, never taken from the MIME `filename`. There is no
   `--force`. See issue #44 for the open question about the matching rule.
 
+### `sync_mail.sh` — force a sync
+
+The container cannot trigger a sync (no credential, no path to the mail server), so this is the only
+way to pull mail on demand instead of waiting for `mbsync.timer`.
+
+```bash
+scripts/sync_mail.sh              # sync, wait, report what changed
+scripts/sync_mail.sh --agent NAME # another agent user (default: ha_agent)
+scripts/sync_mail.sh --no-wait    # fire and forget
+scripts/sync_mail.sh --quiet      # silent unless something fails
+```
+
+Safe at any time: the sync is one-way down, so it can only add or remove local copies of what the
+server already has. It prints mbsync's counters, where `Near: +n` is what actually landed.
+
+Falls back to running `mbsync` directly when the systemd user unit is unavailable.
+
+The launcher runs this automatically (`--no-wait`) whenever mail is selected for a session, so mail
+dragged in moments before launching is there by the time the agent looks.
+
 ### `mail-renderer` — on the host
 
 Drains `/workspace/mail-out/`, renders RFC822, `APPEND`s to `Drafts`. Normally run by

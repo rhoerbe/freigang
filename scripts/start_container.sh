@@ -544,7 +544,31 @@ build_mail_mount() {
     if [[ "$MAIL_ENABLED" == "true" && "$SELECTED_MAIL_ENABLED" == "true" ]]; then
         mkdir -p "$AGENT_HOME/$MAIL_MAILDIR"
         MAIL_MOUNT="-v $AGENT_HOME/$MAIL_MAILDIR:/mail:Z,ro"
+        kick_off_mail_sync
     fi
+}
+
+# Fire-and-forget sync when mail is selected for this session (issue #37).
+#
+# The container cannot trigger a sync itself - it has no credential and no path
+# to the mail server, deliberately - so if this does not happen here, the agent
+# sees whatever mbsync.timer last pulled, up to five minutes stale. Someone who
+# just dragged mail across and immediately launched the agent would find it
+# missing, with nothing to indicate why.
+#
+# Deliberately not blocking: the sync takes about a second, the container start
+# takes longer, so mail is in place by the time the agent looks - and a mail
+# server that is slow or unreachable must never delay or fail the launch. A
+# failure here is silent by design; the timer will retry, and sync_mail.sh
+# reports properly when someone wants to know.
+kick_off_mail_sync() {
+    local sync_script="$SCRIPT_DIR/sync_mail.sh"
+    if [[ -x "$sync_script" ]]; then
+        "$sync_script" --agent "${AGENT_USER:-$(id -un)}" --no-wait --quiet >/dev/null 2>&1 || true
+    else
+        systemctl --user start --no-block mbsync.service >/dev/null 2>&1 || true
+    fi
+    echo "Mail: sync started in the background (Maildir may take a second to settle)"
 }
 
 # Preflight the injected Anthropic token so a dead/expired credential fails loudly
