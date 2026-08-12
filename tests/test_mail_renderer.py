@@ -8,9 +8,9 @@ and the credential reader refuses a loosely-permissioned file.
 
 from __future__ import annotations
 
+import imaplib
 import json
 from email import message_from_bytes, policy
-import imaplib
 from pathlib import Path
 
 import pytest
