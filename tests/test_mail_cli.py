@@ -73,10 +73,8 @@ def test_maildir_root_with_inbox_subfolder_is_resolved(tmp_path: Path):
     """The synced layout is /mail/INBOX/{cur,new,tmp}, not /mail/{cur,new,tmp}.
 
     mbsync is configured with `Inbox <maildir>/INBOX` and `SubFolders Verbatim`,
-    so pointing the CLI at the mount root must descend into INBOX. Reading the
-    root directly failed with "No such file or directory: '/mail/cur'" -- a
-    phase-1/phase-2 integration gap that no unit test covered because the
-    fixtures are flat Maildirs.
+    so pointing at the mount root must still find the mail. MailConfig keeps the
+    root as given; MailStore discovers the folders beneath it.
     """
     root = tmp_path / "mail"
     for folder in ("INBOX", "Trash"):
@@ -87,13 +85,78 @@ def test_maildir_root_with_inbox_subfolder_is_resolved(tmp_path: Path):
     )
 
     config = MailConfig.resolve(maildir=root, workspace=tmp_path / "ws")
-    assert config.maildir == root / "INBOX"
-    assert len(MailStore(config.maildir).list_entries()) == 1
+    assert config.maildir == root
+    store = MailStore(config.maildir)
+    assert list(store.folders) == ["INBOX", "Trash"]
+    assert len(store.list_entries()) == 1
 
 
-def test_flat_maildir_is_left_alone(tmp_path: Path):
-    """A bare Maildir must not be rewritten -- fixtures and --maildir rely on it."""
+def test_flat_maildir_is_treated_as_inbox(tmp_path: Path):
+    """A bare Maildir stays supported -- the fixtures and --maildir rely on it."""
     root = tmp_path / "flat"
     for sub in ("cur", "new", "tmp"):
         (root / sub).mkdir(parents=True)
     assert MailConfig.resolve(maildir=root, workspace=tmp_path / "ws").maildir == root
+    assert list(MailStore(root).folders) == ["INBOX"]
+
+
+def _make_message(path: Path, msg_id: str, subject: str) -> None:
+    path.write_bytes(
+        f"From: someone@example.test\nSubject: {subject}\nMessage-ID: {msg_id}\n\nbody\n".encode()
+    )
+
+
+def _make_folder(root: Path, name: str) -> Path:
+    folder = root / name
+    for sub in ("cur", "new", "tmp"):
+        (folder / sub).mkdir(parents=True)
+    return folder
+
+
+def test_messages_in_subfolders_are_listed_with_their_folder(tmp_path: Path, capsys):
+    """Mail filed into a folder must be visible, labelled with that folder.
+
+    mbsync writes one Maildir per folder under the mount root, so reading only
+    <root>/INBOX made foldered mail invisible with no error -- the user's mail
+    was on disk and `mail ls` said nothing was there.
+    """
+    root = tmp_path / "mail"
+    _make_message(_make_folder(root, "INBOX") / "cur" / "1.a:2,S", "<in-1@example.test>", "in inbox")
+    _make_message(_make_folder(root, "Fronius Support") / "cur" / "2.b:2,S", "<fs-1@example.test>", "in folder")
+    _make_folder(root, "Trash")
+
+    store = MailStore(root)
+    assert list(store.folders) == ["INBOX", "Fronius Support", "Trash"]  # INBOX first
+    assert {e.folder for e in store.list_entries()} == {"INBOX", "Fronius Support"}
+
+    assert main(["ls", "--maildir", str(root), "--workspace", str(tmp_path / "ws")]) == 0
+    out = capsys.readouterr().out
+    assert "FOLDER" in out
+    assert "Fronius Support" in out and "in folder" in out
+
+
+def test_folder_filter_restricts_and_reports_unknown_names(tmp_path: Path, capsys):
+    root = tmp_path / "mail"
+    _make_message(_make_folder(root, "INBOX") / "cur" / "1.a:2,S", "<in-1@example.test>", "in inbox")
+    _make_message(_make_folder(root, "Fronius Support") / "cur" / "2.b:2,S", "<fs-1@example.test>", "in folder")
+
+    entries = MailStore(root, folder="fronius support").list_entries()  # case-insensitive
+    assert [e.subject for e in entries] == ["in folder"]
+
+    assert main(["ls", "--folder", "Nope", "--maildir", str(root), "--workspace", str(tmp_path / "ws")]) == 1
+    assert "No folder named 'Nope'" in capsys.readouterr().err
+
+
+def test_nested_folders_are_walked(tmp_path: Path):
+    root = tmp_path / "mail"
+    _make_folder(root, "INBOX")
+    _make_message(_make_folder(root, "Projects/Solar") / "cur" / "3.c:2,S", "<n-1@example.test>", "nested")
+    assert "Projects/Solar" in MailStore(root).folders
+
+
+def test_message_id_is_stable_across_folders(tmp_path: Path):
+    """Ids come from the Message-ID, so filing mail elsewhere must not renumber it."""
+    a, b = tmp_path / "a", tmp_path / "b"
+    _make_message(_make_folder(a, "INBOX") / "cur" / "1.x:2,S", "<same@example.test>", "s")
+    _make_message(_make_folder(b, "Archive") / "cur" / "1.y:2,S", "<same@example.test>", "s")
+    assert MailStore(a).list_entries()[0].id == MailStore(b).list_entries()[0].id
