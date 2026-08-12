@@ -39,7 +39,7 @@
   when: agent_mail_imap_password is defined
   no_log: true
 
-- name: Install placeholder IMAP credential (force=false: never clobbers a hand-placed password)
+- name: Install placeholder IMAP credential (force=false, so a hand-placed password is never clobbered)
   ansible.builtin.template:
     src: imap_password_placeholder.j2
     dest: "{{ agent_mail_credential_dir }}/imap_password"
@@ -103,3 +103,11 @@
   become_user: "{{ agent_mail_username }}"
   environment:
     XDG_RUNTIME_DIR: "/run/user/{{ agent_mail_uid }}"
+
+# ---
+
+# Draft renderer (issue #37): the upward path -- drains /workspace/mail-out and
+# APPENDs to Drafts. Kept in its own file so the down-sync above stays readable;
+# imported last because it depends on agent_mail_uid, gathered above.
+- name: Install and enable the host-side draft renderer
+  ansible.builtin.import_tasks: renderer.yml
