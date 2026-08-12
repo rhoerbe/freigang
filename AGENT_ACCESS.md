@@ -32,11 +32,49 @@ You are running in an isolated container with restricted tool and network access
 - `/workspace` - Persistent workspace (mounted from host)
 - `/workspace/hadmin` - Target repository
 - `/sessions` - Session logs
+- `/mail` - Read-only synced mailbox (see Mail below; present only when enabled for this session)
+- `/workspace/mail-out` - Draft output directory (see Mail below); part of the `/workspace` mount, not a separate one
 
 ## Blocked
 - All other outbound network access
 - Host filesystem outside mounted volumes
 - Privileged operations
+- IMAP/SMTP to the mail server: the container never has a network path to it and never holds a
+  mail credential (see Mail below)
+
+## Mail (issue #37)
+
+Agents whose config carries a `mail:` block with `enabled: true` may be offered read access to a
+mailbox, gated per session by a TUI toggle that defaults **off**. The design goal is that "the
+agent cannot send mail on my behalf" is true because the container is structurally unable to, not
+because a policy says not to.
+
+- **The agent has no IMAP access and no mail credential.** There is no IMAP client library wired
+  in for the agent to use even if it wanted to, no network path from the container to the mail
+  server, and the IMAP password is never written into any directory that is mounted into the
+  container. All IMAP traffic (both reading the mailbox and posting drafts) happens on the host,
+  outside the container, as the host `ha_agent` account.
+- **The agent cannot send mail.** The only upward path is a host-side renderer that appends
+  agent-proposed text to the mailbox's `Drafts` folder for the human to review and send manually
+  from their own mail client; nothing the agent writes is ever transmitted as an outgoing message.
+- `/mail` - a host-side `mbsync` job pulls the mailbox down into a Maildir on the host, on a
+  timer; that Maildir is bind-mounted **read-only** into the container at `/mail`, as a sibling of
+  `/sessions` (not nested under `/workspace`). The mount exists only for sessions where both the
+  agent's config has `mail.enabled: true` **and** the per-session TUI toggle was switched on; if
+  either is false the mount is absent entirely - not present-but-empty. A container-side `mail`
+  CLI (`mail ls` / `mail show <id>` / `mail attach <id> <n>`) reads this Maildir; every message
+  body it prints is wrapped in an explicit untrusted-content delimiter, and attachments are only
+  ever extracted on-demand into `/workspace/mail-attachments/`, never automatically.
+- `/workspace/mail-out` - the agent writes a plain-text draft body plus a small sidecar (subject,
+  optional `In-Reply-To`, any *proposed* recipient as data, never as a header) here. A separate
+  host-side process drains this directory, renders an RFC822 message through a closed header
+  allowlist (`From`/`To` hard-coded, `Date` generated, only `Subject`/`In-Reply-To` come from the
+  agent), and `APPEND`s it to `Drafts` over IMAP. Any recipient the agent proposed appears only as
+  a visible line in the body, never in a header, so sending still requires the human to type an
+  address.
+
+See [Multi-Agent Setup Guide](docs/multi-agent-setup.md#mail-setup-issue-37) for how an operator
+enables this per agent, and GitHub issue #37 for the full design and rationale.
 
 ## Purpose
 Administer Home Assistant at 10.4.4.10 via API, Playwright MCP, and MQTT debugging.

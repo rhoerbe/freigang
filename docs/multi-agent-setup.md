@@ -308,6 +308,142 @@ If `auto_sync: true` doesn't work:
 3. Check container logs for git errors
 4. Verify no local uncommitted changes exist
 
+## Mail Setup (issue #37)
+
+An agent can be given read access to a mailbox and the ability to propose draft replies, without
+ever holding IMAP credentials or having network reachability to the mail server itself. This
+section describes the full data flow and how an operator turns it on for an agent.
+
+### Data flow, end to end
+
+```
+personal mailbox --(user drags mail in)--> ha_agent@hoerbe.at INBOX
+                                                  |
+                                   host mbsync, one-way DOWN, timer (5 min)
+                                                  v
+                                        $AGENT_HOME/mail  (Maildir, host filesystem)
+                                                  |
+                                     bind-mounted read-only at /mail
+                                                  v
+                                  container: `mail ls` / `mail show` / `mail attach`
+                                                  |
+                              agent writes plain text + sidecar to /workspace/mail-out/
+                                                  v
+                          host mail-renderer, closed header allowlist, timer (10 min)
+                                                  v
+                                  IMAP APPEND to the mailbox's Drafts folder
+                                                  |
+                                                  v
+                                 user opens their mail client, reviews, sends (or not)
+```
+
+The user is the airlock at both ends: nothing reaches the agent's mailbox unless the user
+deliberately dragged it in, and nothing leaves as a real outgoing message unless the user opens
+the resulting draft and sends it themselves.
+
+### Design invariants
+
+These hold regardless of configuration and are enforced structurally, not by policy:
+
+- **One-way-down sync.** `mbsync` is configured `Sync Pull` only - no upward flag sync, no
+  two-way channel. The container-writable `/workspace` tree is never a sync source.
+- **The agent never speaks IMAP.** No IMAP client is wired into the container image for agent
+  use, and the container has no network route to the mail server. All IMAP traffic - both the
+  down-sync and the `Drafts` `APPEND` - happens on the host, as the host agent account.
+- **The credential lives outside the mounted tree.** The IMAP password sits at
+  `$AGENT_HOME/.mailsync/` (mode 0600), a sibling of `workspace` and `mail` that no `-v` flag in
+  `scripts/start_container.sh` ever references, so it is unreadable from inside a running
+  container regardless of TUI selection. (Deliberately not under
+  `$AGENT_HOME/workspace/.secrets/`, which is inside the wholesale `/workspace` mount and readable
+  from the container regardless of TUI selection - see issue #38.)
+- **Closed header allowlist on the way out.** The host-side draft renderer builds every message
+  with `email.message.EmailMessage`, never hand-formatted strings, and only `From`/`To`
+  (hard-coded, not agent input), `Date` (generated), `Subject` and `In-Reply-To` (the agent's only
+  two inputs, both validated - `In-Reply-To` must match a Message-ID actually present in the
+  synced Maildir) are allowed to exist on the rendered message. Any other header the agent
+  proposes is dropped, not merged. A recipient the agent proposes is rendered as a visible line in
+  the draft body, never as a header, so sending still requires the human to type an address.
+- **The agent cannot send mail.** The only upward path is `APPEND` to `Drafts`; there is no code
+  path from the container to an outgoing SMTP send.
+
+### 1. Enable mail in the agent config
+
+Add a `mail:` block to the agent's YAML in `/etc/freigang/agents.d/`:
+
+```yaml
+mail:
+  enabled: true
+  maildir: mail
+  imap_host: mail.your-server.de
+  drafts_folder: Drafts
+```
+
+- `enabled` - gates whether the (default-off) mail toggle appears in the TUI at all. Absent
+  `mail:` block, or `enabled: false`, means no toggle, no mount, ever - see
+  [Agent Configuration Schema](agent-config-schema.md#mail-object-optional).
+- `maildir` - directory name under `linux_user.home` holding the Maildir kept in sync by the
+  `agent_mail` role; mounted read-only at `/mail`.
+- `imap_host` / `drafts_folder` - consumed by the host-side sync and renderer, not by the mount.
+
+`enabled: true` only makes the toggle available; the per-session TUI checkbox (default off) still
+has to be switched on for `/mail` to actually be bind-mounted for that run. Both the config gate
+and the toggle must be true, or `scripts/start_container.sh` mounts nothing.
+
+### 2. Run the `agent_mail` Ansible role
+
+`ansible/roles/agent_mail/` installs `isync` (`mbsync`), deploys a one-way-down mbsync config, and
+sets up a host `systemd --user` timer (5-minute cadence) plus, additively, the draft-renderer
+service and timer (10-minute cadence). It is parameterized - `ha_agent` is only a default in
+`defaults/main.yml`, not hard-coded into the role's tasks or templates. Key variables:
+
+```yaml
+agent_mail_username: ha_agent
+agent_mail_address: ha_agent@hoerbe.at
+agent_mail_imap_host: mail.your-server.de
+agent_mail_maildir: "{{ agent_mail_home }}/mail"
+agent_mail_credential_dir: "{{ agent_mail_home }}/.mailsync"
+```
+
+Wire it into `ansible/playbooks/agent-setup.yml` for the target agent, then run the playbook.
+
+### 3. Place the IMAP credential by hand
+
+**Do not add an ansible-vault file to this repo for the mail password.** freigang is a *public*
+repo: committed vault ciphertext is published permanently and can be attacked offline at leisure,
+and the vault passphrase on these control nodes is shared with a private repo's vault. A public
+repo turns a shared passphrase into a shared liability. The mail credential is also
+deployment-specific, so it does not belong in a general-purpose project at all.
+
+Place it once, directly on the target host:
+
+```bash
+read -rs pw && printf '%s' "$pw" \
+  | sudo install -o ha_agent -g ha_agent -m600 /dev/stdin \
+    /home/ha_agent/.mailsync/imap_password
+```
+
+`read -rs` keeps the password off the terminal and out of shell history; `printf '%s'` writes no
+trailing newline, which keeps mbsync's `PassCmd "cat ..."` clean.
+
+The role installs a placeholder with `force: false` and enforces mode 0600, so re-running the
+playbook never clobbers a hand-placed password. A host rebuild means re-copying it from your
+password manager - cheap here, since rotating an IMAP password destroys nothing (unlike, say, a
+Matrix macaroon key, where rotation logs out every device).
+
+If you do want reproducible deploys, `agent_mail_imap_password` is still honoured when passed in
+(`-e @/path/to/vault.yml --ask-vault-pass`) - keep that vault in a **private** repo, never here.
+
+### 4. Confirm on the host
+
+```bash
+sudo -u ha_agent XDG_RUNTIME_DIR=/run/user/<uid> systemctl --user status mbsync.timer mail-renderer.timer
+sudo stat -c '%a %U:%G %n' $AGENT_HOME/.mailsync $AGENT_HOME/.mailsync/imap_password $AGENT_HOME/mail
+```
+
+`.mailsync` and its contents should be `700`/`600`, owned by the agent user, and must never appear
+in any `-v` flag in `scripts/start_container.sh` - only `$AGENT_HOME/mail` (read-only, as `/mail`)
+and `$AGENT_HOME/workspace` are ever mounted.
+
 ## Next Steps
 
 - See [Agent Configuration Schema](agent-config-schema.md) for detailed field documentation
