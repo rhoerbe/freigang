@@ -49,10 +49,27 @@ seed_claude_install() {
     fi
 }
 
+sync_mail_skill() {
+    # The mail skill must be present exactly when the capability is. /mail is
+    # mounted only for sessions where the user enabled mail in the TUI, and
+    # $HOME is a persistent bind mount - so a skill seeded in an earlier session
+    # would otherwise linger and advertise a `mail` command with nothing behind
+    # it. Seed when mounted, remove when not.
+    local stage=/usr/local/share/freigang-skills/mail
+    local dest="$HOME/.claude/skills/mail"
+    if [[ -d /mail ]]; then
+        [[ -d "$stage" ]] || return 0
+        mkdir -p "$dest"
+        cp -a "$stage/." "$dest/"
+    else
+        rm -rf "$dest"
+    fi
+}
+
 # Seed only for invocations that actually use Claude (the agent or a shell),
 # not for lightweight image queries like `cat /etc/freigang/mcp-manifest.json`.
 case "$(basename "${1:-claude}")" in
-    claude|bash|sh) seed_claude_install ;;
+    claude|bash|sh) seed_claude_install; sync_mail_skill ;;
 esac
 
 start_xvfb() {
