@@ -26,11 +26,13 @@ from pathlib import Path
 
 import pytest
 
+from mail_renderer import drain as drain_module
 from mail_renderer.config import ConfigError, RendererConfig
 from mail_renderer.drain import drain
 from mail_renderer.errors import DraftError
 from mail_renderer.imap_append import AppendError
 from mail_renderer.render import ALLOWED_HEADERS, build_message, render_bytes
+from mail_renderer.safeio import UnsafeReadError, read_bytes_nofollow
 from mail_renderer.sidecar import load_sidecar
 
 FROM_ADDR = "ha_agent@example.test"
@@ -486,3 +488,64 @@ def test_renderer_package_never_references_the_credential_from_workspace():
         text = module.read_text(encoding="utf-8")
         assert "workspace/.secrets" not in text
         assert "mail-out/imap_password" not in text
+
+
+def test_body_file_swapped_for_a_symlink_after_validation_is_not_read(
+    config: RendererConfig, mail_out: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """The TOCTOU behind the symlink guard: validate, swap, read.
+
+    `load_sidecar` proves the body file is a regular file inside `mail-out/`,
+    but the read is a separate syscall against the same *name*, and the agent
+    owns that directory. Swapping the file for a symlink in between made the
+    host renderer read whatever the link pointed at -- the IMAP credential --
+    and APPEND it to Drafts, which is exactly the exfiltration the static
+    symlink check was written to stop.
+
+    This simulates the swap deterministically by mutating the directory between
+    validation and read; with a by-name read it posts the secret.
+    """
+    secret = tmp_path / "credentials" / "imap_password"
+    secret.parent.mkdir(parents=True, exist_ok=True)
+    secret.write_text("the-real-imap-password", encoding="utf-8")
+
+    write_draft(mail_out, "race", {"subject": "innocuous"}, body="harmless body")
+    body_file = mail_out / "race.txt"
+
+    real_load_sidecar = drain_module.load_sidecar
+
+    def load_then_swap(path: Path, cfg: RendererConfig):
+        sidecar = real_load_sidecar(path, cfg)
+        body_file.unlink()
+        body_file.symlink_to(secret)
+        return sidecar
+
+    monkeypatch.setattr(drain_module, "load_sidecar", load_then_swap)
+
+    appender = FakeAppender()
+    report = drain(config, appender)
+
+    assert appender.appended == [], "the credential must never reach an APPEND"
+    for _folder, raw in appender.appended:
+        assert b"the-real-imap-password" not in raw
+    assert report.posted == []
+    assert report.failed == ["race.json"]
+    assert (config.failed_dir / "race.json").exists()
+
+
+def test_read_bytes_nofollow_refuses_a_symlink_and_caps_size(tmp_path: Path):
+    target = tmp_path / "secret"
+    target.write_text("sensitive", encoding="utf-8")
+    link = tmp_path / "link.txt"
+    link.symlink_to(target)
+    with pytest.raises(UnsafeReadError, match="symlink"):
+        read_bytes_nofollow(link, 4096, "body file 'link.txt'")
+
+    big = tmp_path / "big.txt"
+    big.write_text("x" * 100, encoding="utf-8")
+    with pytest.raises(UnsafeReadError, match="cap"):
+        read_bytes_nofollow(big, 10, "body file 'big.txt'")
+
+    ok = tmp_path / "ok.txt"
+    ok.write_text("fine", encoding="utf-8")
+    assert read_bytes_nofollow(ok, 4096, "body file 'ok.txt'") == b"fine"

@@ -25,6 +25,7 @@ from mail_renderer.errors import ConfigError, DraftError
 from mail_renderer.imap_append import AppendError
 from mail_renderer.maildir_ids import collect_message_ids
 from mail_renderer.render import build_message, render_bytes
+from mail_renderer.safeio import read_bytes_nofollow
 from mail_renderer.sidecar import load_sidecar
 
 log = logging.getLogger(__name__)
@@ -127,7 +128,13 @@ def drain(config: RendererConfig, appender: Appender, known_ids: set[str] | None
     for index, sidecar_path in enumerate(batch):
         try:
             sidecar = load_sidecar(sidecar_path, config)
-            body_text = sidecar.body_path.read_text(encoding="utf-8", errors="replace")
+            # Re-open under O_NOFOLLOW rather than reading the validated path by
+            # name: load_sidecar's checks and this read are separate syscalls, and
+            # the agent owns mail-out/, so a by-name read here could pick up a
+            # symlink swapped in after validation (mail_renderer.safeio).
+            body_text = read_bytes_nofollow(
+                sidecar.body_path, config.max_body_bytes, f"body file {sidecar.body_path.name!r}"
+            ).decode("utf-8", errors="replace")
             if sidecar.dropped_keys:
                 log.warning(
                     "%s: dropped non-allowlisted sidecar keys %s", sidecar_path.name, list(sidecar.dropped_keys)

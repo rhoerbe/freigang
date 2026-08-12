@@ -36,6 +36,7 @@ from mail_renderer.guards import (
     validate_message_id,
     validate_subject,
 )
+from mail_renderer.safeio import UnsafeReadError, read_bytes_nofollow
 
 # The complete set of keys that have any effect. Everything else is dropped.
 RECOGNIZED_KEYS = frozenset({"subject", "in_reply_to", "proposed_recipients", "body_file"})
@@ -58,15 +59,15 @@ class Sidecar:
 
 
 def _read_json_object(path: Path, max_bytes: int) -> dict:
-    if path.is_symlink():
-        raise SidecarError(f"{path.name} is a symlink; refusing to follow it")
-    if not path.is_file():
-        raise SidecarError(f"{path.name} is not a regular file")
-    size = path.stat().st_size
-    if size > max_bytes:
-        raise SidecarError(f"sidecar is {size} bytes, over the {max_bytes}-byte cap")
+    # Opened once, with O_NOFOLLOW; the symlink, regular-file and size checks
+    # all come from that descriptor, so there is no check-then-read window for
+    # the agent to swap the file in (see mail_renderer.safeio).
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        raw = read_bytes_nofollow(path, max_bytes, f"sidecar {path.name}")
+    except UnsafeReadError as exc:
+        raise SidecarError(str(exc)) from exc
+    try:
+        payload = json.loads(raw.decode("utf-8"))
     except UnicodeDecodeError as exc:
         raise SidecarError(f"sidecar is not valid UTF-8: {exc}") from exc
     except json.JSONDecodeError as exc:
