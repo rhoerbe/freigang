@@ -322,24 +322,13 @@ class LauncherApp(App):
                                 classes="mcp-checkbox",
                             )
 
-            # Secrets (selectable - only available secrets can be enabled)
-            with Vertical(classes="section"):
-                yield Label("Secrets (pass to container):")
-                with Horizontal(classes="mcp-grid"):
-                    for secret in self.config["secrets"]:
-                        name = secret["name"]
-                        present = secret["present"]
-                        enabled = name in self.config.get("default_secrets", [])
-                        yield SecretCheckbox(name, present, enabled)
-                    if not self.config["secrets"]:
-                        yield Static("[dim]No secrets configured[/]")
-
-            # Mail (config-gated, per-session toggle, default OFF - issue #37).
-            # Shown only when the agent config has mail.enabled: true; the mount itself
-            # only happens when this checkbox is also checked for this session.
-            if self.config.get("mail_capable"):
-                with Vertical(classes="section"):
-                    yield Label("Mail:")
+                # Mail (config-gated, per-session toggle, default OFF - issue #37).
+                # Shown only when the agent config has mail.enabled: true; the mount
+                # itself only happens when this checkbox is also checked for this
+                # session. Lives under Tooling with the other per-session capabilities
+                # rather than in a section of its own.
+                if self.config.get("mail_capable"):
+                    yield Label("Mail:", classes="mcp-servers-label")
                     with Horizontal(classes="mcp-grid"):
                         yield Checkbox(
                             "Mount /mail (read-only)",
@@ -353,6 +342,18 @@ class LauncherApp(App):
                         f"  |  IMAP host: {detail}[/]",
                         classes="context-line",
                     )
+
+            # Secrets (selectable - only available secrets can be enabled)
+            with Vertical(classes="section"):
+                yield Label("Secrets (pass to container):")
+                with Horizontal(classes="mcp-grid"):
+                    for secret in self.config["secrets"]:
+                        name = secret["name"]
+                        present = secret["present"]
+                        enabled = name in self.config.get("default_secrets", [])
+                        yield SecretCheckbox(name, present, enabled)
+                    if not self.config["secrets"]:
+                        yield Static("[dim]No secrets configured[/]")
 
             # Web Access Filter (only when policy groups are available)
             # Each group: checkbox (enable/disable) + collapsible (expand to see URLs)
