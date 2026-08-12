@@ -1,0 +1,73 @@
+name: checks
+
+# Runs on every push and PR. The Ansible job exists because issue #37 shipped a
+# role that could not parse for several merges: the Python suite was green the
+# whole time, because nothing had ever syntax-checked the YAML.
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+jobs:
+  python:
+    name: pytest + ruff
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        run: pipx install uv
+
+      - name: Run the test suite
+        run: uv run pytest -q
+
+      - name: Lint
+        run: uvx ruff check mail_cli mail_renderer tests
+
+  ansible:
+    name: ansible syntax
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install ansible-core
+        run: pip install ansible-core
+
+      - name: Parse every YAML file under ansible/
+        run: |
+          python3 - <<'PY'
+          import sys
+          from pathlib import Path
+
+          import yaml
+
+          failures = []
+          for path in sorted(Path("ansible").rglob("*.yml")):
+              try:
+                  list(yaml.safe_load_all(path.read_text(encoding="utf-8")))
+              except yaml.YAMLError as exc:
+                  failures.append(f"{path}: {exc}")
+          for failure in failures:
+              print(failure)
+          sys.exit(1 if failures else 0)
+          PY
+
+      - name: Syntax-check every playbook
+        # Run from ansible/, where ansible.cfg resolves roles_path.
+        working-directory: ansible
+        run: |
+          status=0
+          for playbook in playbooks/*.yml; do
+            echo "--- $playbook"
+            ansible-playbook --syntax-check -i inventory/hosts.yml "$playbook" || status=1
+          done
+          exit $status
