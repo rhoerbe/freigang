@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import mailbox
 from dataclasses import dataclass
+from email.header import decode_header, make_header
 from email.message import Message
 from email.utils import parsedate_to_datetime
 from pathlib import Path
@@ -87,6 +88,26 @@ def discover_folders(root: Path) -> dict[str, Path]:
     return dict(sorted(found.items(), key=lambda kv: (kv[0] != "INBOX", kv[0])))
 
 
+def decode_header_value(raw: str | None, fallback: str) -> str:
+    """Decode an RFC 2047 header to text, flattened to a single line.
+
+    Real mail arrives with MIME encoded-words -- `=?utf-8?B?...?=` -- and long
+    headers folded across continuation lines. Printed raw they are unreadable
+    for the user and, worse, unreadable for the agent, which then reasons about
+    base64 instead of a subject. Folding also broke the `mail ls` table.
+
+    Malformed encodings must not take the listing down with them, so anything
+    that fails to decode falls back to the raw value.
+    """
+    if not raw:
+        return fallback
+    try:
+        decoded = str(make_header(decode_header(raw)))
+    except (UnicodeDecodeError, LookupError, ValueError):
+        decoded = raw
+    return " ".join(decoded.split())
+
+
 def _count_attachments(msg: Message) -> int:
     count = 0
     for part in msg.walk():
@@ -158,8 +179,8 @@ class MailStore:
                     key=key,
                     message_id=message_id,
                     date=_format_date(msg),
-                    from_addr=msg.get("From", "(unknown sender)"),
-                    subject=msg.get("Subject", "(no subject)"),
+                    from_addr=decode_header_value(msg.get("From"), "(unknown sender)"),
+                    subject=decode_header_value(msg.get("Subject"), "(no subject)"),
                     attachment_count=_count_attachments(msg),
                     folder=folder,
                 )
@@ -182,8 +203,8 @@ class MailStore:
                     key=key,
                     message_id=message_id,
                     date=_format_date(msg),
-                    from_addr=msg.get("From", "(unknown sender)"),
-                    subject=msg.get("Subject", "(no subject)"),
+                    from_addr=decode_header_value(msg.get("From"), "(unknown sender)"),
+                    subject=decode_header_value(msg.get("Subject"), "(no subject)"),
                     attachment_count=_count_attachments(msg),
                     folder=folder,
                 )
