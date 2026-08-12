@@ -223,7 +223,7 @@ Reads the read-only Maildir at `/mail`. Present only when the session's mail tog
 
 | Command | Purpose |
 |---|---|
-| `mail ls` | List messages: date, from, subject, attachment count, processed marker |
+| `mail ls` | List messages across all folders: date, folder, from, subject, attachment count, processed marker |
 | `mail show <id>` | Decoded body, `text/plain` preferred, HTML stripped to text |
 | `mail attach <id> <n>` | Extract attachment `n` (1-based, as numbered by `mail show`) |
 
@@ -231,6 +231,7 @@ Reads the read-only Maildir at `/mail`. Present only when the session's mail tog
 |---|---|---|
 | `--maildir PATH` | all | Override the Maildir (default `$MAIL_CLI_MAILDIR`, else `/mail`) |
 | `--workspace PATH` | all | Override the workspace (default `$MAIL_CLI_WORKSPACE`, else `/workspace`) |
+| `--folder NAME` | all | Restrict to one folder, case-insensitive (e.g. `--folder "Fronius Support"`) |
 | `--no-mark-processed` | `show` | Do not record this message in the advisory processed-ledger |
 
 | Environment variable | Default |

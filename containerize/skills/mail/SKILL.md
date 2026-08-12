@@ -21,10 +21,16 @@ sync; if the user expects a message that is not there yet, say so and wait.
 ## Reading
 
 ```bash
-mail ls                    # list: date, from, subject, attachment count, processed marker
-mail show <id>             # decoded body (text/plain preferred, HTML stripped to text)
-mail attach <id> <n>       # extract attachment n (1-based, as numbered by mail show)
+mail ls                          # list every folder: date, folder, from, subject, attachments
+mail ls --folder "Fronius Support"   # restrict to one folder (case-insensitive)
+mail show <id>                   # decoded body (text/plain preferred, HTML stripped to text)
+mail attach <id> <n>             # extract attachment n (1-based, as numbered by mail show)
 ```
+
+The mailbox has folders: INBOX is where the user hands mail over, but they may file
+messages into named folders (and Trash exists). `mail ls` lists across all of them and
+shows a FOLDER column, so check it before concluding a message is missing. Ids come from
+the Message-ID, so a message keeps its id if the user moves it between folders.
 
 `mail show` marks a message in an advisory processed-ledger. Pass `--no-mark-processed` to skip
 that. The ledger never hides anything — a marked message still appears in `mail ls`. Messages are

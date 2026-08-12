@@ -31,29 +31,6 @@ LEDGER_FILENAME = "mail-ledger.json"
 ATTACHMENTS_DIRNAME = "mail-attachments"
 
 
-def _descend_to_inbox(root: Path) -> Path:
-    """Return the Maildir to read: `root/INBOX` when that is the real one.
-
-    mbsync is configured with `Inbox <maildir>/INBOX` and `SubFolders Verbatim`
-    (see the agent_mail Ansible role), so the synced tree is
-
-        /mail/INBOX/{cur,new,tmp}
-        /mail/Trash/{cur,new,tmp}
-
-    while a bare Maildir is `<root>/{cur,new,tmp}`. Reading `/mail` directly
-    therefore fails with "No such file or directory: '/mail/cur'". Descend into
-    INBOX when the root is not itself a Maildir and INBOX is one; otherwise
-    leave the path alone, so explicit `--maildir` paths and the test fixtures
-    keep working unchanged.
-    """
-    if (root / "cur").is_dir():
-        return root
-    inbox = root / "INBOX"
-    if (inbox / "cur").is_dir():
-        return inbox
-    return root
-
-
 @dataclass(frozen=True)
 class MailConfig:
     """Resolved configuration for a single CLI invocation."""
@@ -81,7 +58,6 @@ class MailConfig:
     ) -> MailConfig:
         """Resolve configuration from explicit args, then env vars, then defaults."""
         resolved_maildir = Path(maildir) if maildir is not None else Path(os.environ.get(ENV_MAILDIR, DEFAULT_MAILDIR))
-        resolved_maildir = _descend_to_inbox(resolved_maildir)
         resolved_workspace = (
             Path(workspace) if workspace is not None else Path(os.environ.get(ENV_WORKSPACE, DEFAULT_WORKSPACE))
         )
