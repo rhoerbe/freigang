@@ -1,0 +1,19 @@
+[Unit]
+Description=Render agent-proposed drafts from mail-out/ and APPEND them to IMAP Drafts (issue #37)
+Documentation=https://github.com/rhoerbe/freigang/issues/37
+
+[Service]
+Type=oneshot
+Environment=PYTHONPATH={{ agent_mail_renderer_root }}
+Environment=MAIL_RENDERER_MAIL_OUT={{ agent_mail_out_dir }}
+Environment=MAIL_RENDERER_MAILDIR={{ agent_mail_maildir }}
+Environment=MAIL_RENDERER_FROM={{ agent_mail_renderer_from }}
+Environment=MAIL_RENDERER_TO={{ agent_mail_renderer_to }}
+Environment=MAIL_RENDERER_IMAP_HOST={{ agent_mail_imap_host }}
+Environment=MAIL_RENDERER_IMAP_PORT={{ agent_mail_imap_port }}
+Environment=MAIL_RENDERER_IMAP_USER={{ agent_mail_address }}
+Environment=MAIL_RENDERER_IMAP_PASSWORD_FILE={{ agent_mail_credential_dir }}/imap_password
+Environment=MAIL_RENDERER_DRAFTS_FOLDER={{ agent_mail_renderer_drafts_folder }}
+Environment=MAIL_RENDERER_MAX_DRAFTS={{ agent_mail_renderer_max_drafts }}
+Environment=MAIL_RENDERER_MAX_BODY_BYTES={{ agent_mail_renderer_max_body_bytes }}
+ExecStart={{ agent_mail_renderer_root }}/venv/bin/python3 -m mail_renderer
