@@ -99,12 +99,9 @@ session.
 | `SKIP_AUTH_PROBE=1` | Skip the live Anthropic token probe at launch. Use when the probe's network path is the problem, not the token |
 
 Secret **selection** happens in the TUI; selected secrets are injected as environment variables
-(`GH_TOKEN`, `HA_ACCESS_TOKEN`, `MQTT_USER`, `MQTT_PASS`, `CLAUDE_CODE_OAUTH_TOKEN`).
-
-> Selecting fewer secrets in the TUI does not hide the others from the container: `.secrets/` lives
-> inside the bind-mounted workspace, so every secret file is readable at `/workspace/.secrets/`
-> regardless. Tracked as issue #38. The **mail** toggle is different — it adds or omits a mount, so
-> unselected means genuinely absent.
+(`GH_TOKEN`, `HA_ACCESS_TOKEN`, `MQTT_USER`, `MQTT_PASS`, `CLAUDE_CODE_OAUTH_TOKEN`). Only the
+selected secrets are injected — `.secrets/` lives outside the bind-mounted workspace, so no secret
+files are visible inside the container regardless of selection.
 
 ### `scripts/sync_oauth_token.sh`
 
@@ -370,6 +367,6 @@ curl -s -X POST -H "Authorization: Bearer $HA_ACCESS_TOKEN" \
 ## Prerequisites
 
 - `ha_agent` user configured (see [docs/setup.md](docs/setup.md))
-- Secrets present in `/home/ha_agent/workspace/.secrets/`
+- Secrets present in `/home/ha_agent/.secrets/`
 - Podman network `ha-agent-net` exists
 - Tinyproxy running on host port 8888
