@@ -2,7 +2,7 @@
 # Build claude-ha-agent container image
 set -e
 
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."   # build context = repo root (image installs mail_cli)
 
 export XDG_RUNTIME_DIR=/run/user/$(id -u)
 
@@ -11,6 +11,7 @@ export XDG_RUNTIME_DIR=/run/user/$(id -u)
 podman --cgroup-manager=cgroupfs build \
     --build-arg WEEKLY_CACHE_BUST=$(date +%Y-%V) \
     --build-arg CLAUDE_CACHE_BUST=$(date +%Y-%m-%d) \
+    -f containerize/Dockerfile \
     -t claude-ha-agent .
 
 echo "Build complete. Image: localhost/claude-ha-agent:latest"

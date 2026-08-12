@@ -67,7 +67,7 @@ RUN mkdir -p /etc/opt/chrome/policies/managed && \
 RUN dbus-uuidgen > /etc/machine-id
 
 # Chrome seccomp profile for sandbox support in rootless Podman
-COPY seccomp/chrome.json /etc/seccomp/chrome.json
+COPY containerize/seccomp/chrome.json /etc/seccomp/chrome.json
 
 # =============================================================================
 # MIDDLE TIER: Tools updated weekly (yq, Playwright)
@@ -125,22 +125,39 @@ RUN usermod -d /workspace node
 RUN mkdir -p /workspace/.npm && chmod 777 /workspace/.npm
 
 # MCP config template (copied to user home at runtime via --userns=keep-id)
-COPY mcp-config.json /etc/claude/mcp-config.json
+COPY containerize/mcp-config.json /etc/claude/mcp-config.json
 
 # MCP manifest - lists available MCP servers in this container image
 # Can be queried by startup script: podman run --rm $IMAGE cat /etc/freigang/mcp-manifest.json
-COPY mcp-manifest.json /etc/freigang/mcp-manifest.json
+COPY containerize/mcp-manifest.json /etc/freigang/mcp-manifest.json
+
+# Mail capability (issue #37): the `mail` CLI reads the read-only Maildir at
+# /mail. Installed into its own venv rather than system site-packages, per
+# CLAUDE.md ("deploy using venv, even within containers"), and exposed on PATH
+# as `mail`. The build context is the repo root so this comes from the same
+# source the tests run against - there is no second copy to drift.
+COPY containerize/mail-cli-pyproject.toml /opt/mail-cli/pyproject.toml
+COPY mail_cli /opt/mail-cli/mail_cli
+RUN python3 -m venv /opt/mail-cli/venv \
+    && /opt/mail-cli/venv/bin/pip install --no-cache-dir /opt/mail-cli \
+    && ln -s /opt/mail-cli/venv/bin/mail /usr/local/bin/mail \
+    && /usr/local/bin/mail --help >/dev/null
+
+# Mail skill, seeded into $HOME/.claude/skills by entrypoint.sh when /mail is
+# actually mounted (see sync_mail_skill there). Staged here because $HOME is a
+# bind mount the image cannot pre-populate.
+COPY containerize/skills /usr/local/share/freigang-skills
 
 # Statusline script for Claude Code TUI
-COPY agent-statusline.sh /usr/local/bin/agent-statusline.sh
+COPY containerize/agent-statusline.sh /usr/local/bin/agent-statusline.sh
 RUN chmod +x /usr/local/bin/agent-statusline.sh
 
 # Entrypoint script
-COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY containerize/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Tier-2 Remote Control helper (see docs/agent-auth-design.md)
-COPY claude-rc /usr/local/bin/claude-rc
+COPY containerize/claude-rc /usr/local/bin/claude-rc
 RUN chmod +x /usr/local/bin/claude-rc
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

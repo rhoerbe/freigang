@@ -1,0 +1,12 @@
+# Build context is the repo root (containerize/build.sh) so the image can
+# install mail_cli from the single source. Everything below is irrelevant to
+# the image and only slows the context upload.
+.git
+.claude/worktrees
+.idea
+scratch
+sessions
+tests
+docs
+ansible
+policies
