@@ -29,7 +29,7 @@
     mode: "0600"
   notify: Restart agent mail timer
 
-- name: Install operator-supplied IMAP credential from vault variable
+- name: Install operator-supplied IMAP credential (only if a password variable was passed in)
   ansible.builtin.copy:
     content: "{{ agent_mail_imap_password }}"
     dest: "{{ agent_mail_credential_dir }}/imap_password"
@@ -39,7 +39,7 @@
   when: agent_mail_imap_password is defined
   no_log: true
 
-- name: Install placeholder IMAP credential (no vault variable supplied yet)
+- name: Install placeholder IMAP credential (force=false: never clobbers a hand-placed password)
   ansible.builtin.template:
     src: imap_password_placeholder.j2
     dest: "{{ agent_mail_credential_dir }}/imap_password"

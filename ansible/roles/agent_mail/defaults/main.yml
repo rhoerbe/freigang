@@ -36,19 +36,30 @@ agent_mail_maildir: "{{ agent_mail_home }}/mail"
 agent_mail_credential_dir: "{{ agent_mail_home }}/.mailsync"
 
 # Operator-supplied IMAP password. Leave undefined here -- never set a real value in
-# this repo. Supply it at deploy time via an ansible-vault-encrypted variable, e.g. a
-# group_vars/riva/vault.yml created with:
+# this repo, and do NOT add an ansible-vault file to this repo to hold it.
 #
-#   ansible-vault create ansible/inventory/group_vars/riva/vault.yml
+# This repo is PUBLIC. ansible-vault ciphertext committed here would be published
+# permanently for offline attack against the vault passphrase, and that passphrase is
+# shared with a private repo's vault (see hosting's ADR-0001, which keeps the password
+# in KeePassXC at ~/.ansible-vault-pass). A public repo turns a shared passphrase into a
+# shared liability, so the mail credential -- which is deployment-specific anyway and has
+# no business in a general-purpose project -- stays out of git entirely.
 #
-# containing:
+# Sanctioned path: place the password by hand on the target host, once:
 #
-#   agent_mail_imap_password: "the real hetzner mailbox password"
+#   read -rs pw && printf '%s' "$pw" \
+#     | sudo install -o ha_agent -g ha_agent -m600 /dev/stdin \
+#       /home/ha_agent/.mailsync/imap_password
 #
-# then run the playbook with --ask-vault-pass (or a vault password file). If this
-# variable is left undefined, the role installs a placeholder file at
-# {{ agent_mail_credential_dir }}/imap_password that the operator must replace by hand
-# -- with mode 0600 -- before the sync timer can authenticate.
+# `printf '%s'` writes no trailing newline, which keeps mbsync's PassCmd clean. With this
+# variable left undefined the role installs a placeholder at
+# {{ agent_mail_credential_dir }}/imap_password and enforces mode 0600, so a hand-placed
+# password survives re-runs. Losing it on a host rebuild costs one copy from KeePassXC --
+# unlike a Matrix macaroon key, rotating an IMAP password destroys nothing.
+#
+# agent_mail_imap_password is still honoured if defined (e.g. passed with -e from a vault
+# kept in a PRIVATE repo), so an operator who wants reproducible deploys can have them
+# without this repo ever holding the ciphertext.
 # agent_mail_imap_password: ""
 
 # Sync cadence. A few minutes of staleness is explicitly acceptable per the design.
