@@ -768,7 +768,7 @@ if [[ $# -gt 0 && "$1" != "--"* ]]; then
     # Build VNC port mapping if enabled
     VNC_PORT_MAPPING=""
     if [[ "$SELECTED_ENABLE_VNC" == "true" ]]; then
-        VNC_PORT_MAPPING="-p 5900:5900"
+        VNC_PORT_MAPPING="-p 127.0.0.1:5900:5900"
     fi
 
     # Build web resources bind-mount (mount source policy when present)
@@ -907,7 +907,7 @@ fi
 # Build VNC port mapping if enabled
 VNC_PORT_MAPPING=""
 if [[ "$SELECTED_ENABLE_VNC" == "true" ]]; then
-    VNC_PORT_MAPPING="-p 5900:5900"
+    VNC_PORT_MAPPING="-p 127.0.0.1:5900:5900"
 fi
 
 # Build web resources bind-mount (active filtered file from TUI, or source policy if no TUI)
