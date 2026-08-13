@@ -46,14 +46,19 @@ podman run --rm \
 
 ### Connecting to VNC
 
-VNC binds to localhost only for security. To connect:
+`x11vnc` inside the container runs with `-nopw` (no password). `start_container.sh`
+publishes it to the host as `127.0.0.1:5900` only, so the session is reachable
+from the host itself but not from the network. To connect:
 
 ```bash
 # From another terminal, exec into the running container
 podman exec -it <container-name> vncviewer localhost:5900
 
-# Or expose port for remote access (development only):
-podman run ... -p 5900:5900 ...
+# Or, from the host (loopback-only publish):
+vncviewer 127.0.0.1:5900
+
+# Do NOT rebind to all interfaces (e.g. -p 5900:5900) — x11vnc has no
+# password, so that exposes an unauthenticated session to the network.
 ```
 
 ## Required Podman Options
@@ -87,7 +92,8 @@ On first startup:
 - Rootless Podman provides user namespace isolation
 - Chrome runs in its own sandbox (enabled via custom seccomp profile)
 - No `CAP_SYS_ADMIN` or other elevated capabilities required
-- VNC binds to localhost only by default
+- VNC is published to the host's loopback interface only (`127.0.0.1:5900`)
+  by `start_container.sh`; `x11vnc` itself runs without a password (`-nopw`)
 
 ## Known Issues
 
@@ -137,9 +143,9 @@ podman run --rm \
 - Ensure `--shm-size=2g` is set (default 64MB is too small)
 
 ### VNC connection refused
-- VNC binds to localhost only by default
-- Use `podman exec` to connect from inside the container
-- Or explicitly expose port 5900 for development (not recommended for production)
+- VNC is published to the host's loopback interface only (`127.0.0.1:5900`)
+- Use `podman exec` to connect from inside the container, or `vncviewer 127.0.0.1:5900` from the host
+- Do not rebind to all interfaces — `x11vnc` runs with `-nopw` (no password), so that would expose an unauthenticated session
 
 ### X server not found
 - Ensure `BROWSER_MODE=chrome` is set
