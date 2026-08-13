@@ -8,7 +8,6 @@ Freigang supports running multiple agents, each with:
 - Separate Linux user accounts for audit trails
 - Independent repositories
 - Customizable container images
-- Per-agent policies for MCP servers and secrets
 - Optional auto-sync on container startup
 
 ## Quick Start
@@ -49,8 +48,6 @@ defaults:
   mcp_servers: []
   secrets: [github_token]
 
-policy_file: /etc/freigang/policies/myagent_policy.yaml
-
 resources:
   selectable_secrets:
     - name: github_token
@@ -71,50 +68,7 @@ resources:
     - dontAsk
 ```
 
-### 2. Create Policy File
-
-Create a policy file at the path specified in the agent config:
-
-```bash
-sudo nano /etc/freigang/policies/myagent_policy.yaml
-```
-
-Example policy:
-
-```yaml
-version: 1
-agent_id: myagent
-
-mcp_servers:
-  playwright:
-    allowed: true
-    network_access: inherit
-    filesystem_access:
-      - /workspace
-      - /tmp
-
-secrets:
-  storage_path: /home/myagent/.secrets
-  allowed:
-    - github_token
-    - custom_api_key
-
-network:
-  proxy:
-    http_proxy: http://host.containers.internal:8888
-    https_proxy: http://host.containers.internal:8888
-    no_proxy:
-      - api.anthropic.com
-      - claude.ai
-
-filesystem:
-  writable_paths:
-    - /workspace
-    - /sessions
-    - /tmp
-```
-
-### 3. Create Linux User
+### 2. Create Linux User
 
 Create a dedicated Linux user for the agent:
 
@@ -123,7 +77,7 @@ sudo useradd -m -s /bin/bash myagent
 sudo usermod -aG podman myagent
 ```
 
-### 4. Set Up Repository
+### 3. Set Up Repository
 
 As the agent user, clone the repository:
 
@@ -131,7 +85,7 @@ As the agent user, clone the repository:
 sudo -u myagent git clone git@github.com:username/myrepo.git /home/myagent/workspace/myrepo
 ```
 
-### 5. Build Container Image
+### 4. Build Container Image
 
 Build a container image with the name specified in the agent config:
 
@@ -140,7 +94,7 @@ cd /home/r2h2/devl/freigang/containerize
 podman build -t claude-myagent .
 ```
 
-### 6. Run the Agent
+### 5. Run the Agent
 
 ```bash
 # Let the script auto-select the agent (if only one exists)
@@ -182,9 +136,6 @@ Human-readable description shown in the TUI.
 - `mcp_servers`: Default enabled MCP servers (list)
 - `secrets`: Default enabled secrets (list)
 
-#### `policy_file` (string, required)
-Path to the agent's policy file.
-
 #### `resources` (object, required)
 - `selectable_secrets`: List of secrets available in TUI
   - `name`: Secret file name
@@ -193,32 +144,10 @@ Path to the agent's policy file.
 - `allowed_mcp_servers`: List of MCP server names allowed
 - `permission_modes`: List of permission modes available
 
-### Policy File Fields
-
-#### `version` (number, required)
-Policy format version (currently 1).
-
-#### `agent_id` (string, required)
-Must match the agent configuration.
-
-#### `mcp_servers` (object)
-Per-server configuration:
-- `allowed`: Whether server is allowed
-- `network_access`: Network access mode
-- `filesystem_access`: List of allowed paths
-
-#### `secrets` (object)
-- `storage_path`: Where secrets are stored
-- `allowed`: List of allowed secret names
-
-#### `network` (object)
-- `proxy`: Proxy configuration
-  - `http_proxy`: HTTP proxy URL
-  - `https_proxy`: HTTPS proxy URL
-  - `no_proxy`: List of domains to bypass
-
-#### `filesystem` (object)
-- `writable_paths`: List of writable mount points
+There is currently no per-agent policy enforcement layer. See
+[docs/agent-config-schema.md](agent-config-schema.md#no-per-agent-policy-enforcement-layer) for
+what actually bounds an agent (the container, the mounts, the secrets actually passed, and the
+proxy allowlist).
 
 ## Auto-Sync Repository
 
@@ -231,7 +160,6 @@ repository:
 
 This is useful for:
 - Keeping the agent's workspace up to date
-- Pulling latest policy changes
 - Syncing configuration updates
 
 **Note**: Only fast-forward merges are performed (`git pull --ff-only`). If there are local changes, the sync will fail silently.
@@ -261,11 +189,14 @@ If no agent configurations exist in `/etc/freigang/agents.d/`, the script runs i
 
 ## Security Considerations
 
-1. **File Permissions**: Agent configs and policies are owned by root (0644) to prevent modification by agent users.
+1. **File Permissions**: Agent configs are owned by root (0644) to prevent modification by agent users.
 
 2. **User Isolation**: Each agent runs as a separate Linux user for clear audit trails.
 
-3. **Policy Enforcement**: MCP servers and secrets are filtered by the policy file.
+3. **No per-agent policy enforcement layer**: there is currently no engine that filters MCP
+   servers or secrets per agent. The boundaries that actually apply are the container, the mounts,
+   the secrets actually passed, and the proxy allowlist -- see
+   [docs/agent-config-schema.md](agent-config-schema.md#no-per-agent-policy-enforcement-layer).
 
 4. **No Inference**: Agent identity is never inferred from the current Linux user - it must be explicitly selected or configured.
 
