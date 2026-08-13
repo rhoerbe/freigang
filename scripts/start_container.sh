@@ -124,8 +124,6 @@ load_agent_config() {
     DEFAULT_BROWSER_MODE=$(yq eval '.defaults.browser_mode' "$config_file")
     DEFAULT_VNC=$(yq eval '.defaults.enable_vnc' "$config_file")
 
-    POLICY_FILE=$(yq eval '.policy_file' "$config_file")
-
     # Mail capability block (optional, issue #37). Absent `mail:` means MAIL_ENABLED=false,
     # so no mail TUI rows and no /mail mount are ever offered for this agent.
     MAIL_ENABLED=$(yq eval '.mail.enabled // false' "$config_file")

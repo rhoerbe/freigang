@@ -45,9 +45,6 @@ defaults:
   mcp_servers: [string]             # List of default enabled MCP servers
   secrets: [string]                 # List of default enabled secrets
 
-# Policy file reference (required)
-policy_file: string                 # Absolute path to policy YAML file
-
 # Mail capability (optional)
 mail:
   enabled: boolean                  # Whether this agent may read mail / propose drafts
@@ -63,7 +60,7 @@ resources:
       display: string               # Display name in TUI
       required: boolean             # Whether this secret is required
 
-  # MCP servers allowed by policy
+  # MCP servers offered in the TUI for this agent
   allowed_mcp_servers: [string]     # List of MCP server names
 
   # Permission modes available in TUI
@@ -196,15 +193,6 @@ resources:
 - **Description**: List of secret names to enable by default.
 - **Example**: `["github_token"]`
 
-### `policy_file` Field
-
-#### `policy_file`
-- **Type**: string
-- **Required**: Yes
-- **Description**: Absolute path to the agent's policy YAML file.
-- **Example**: `"/etc/freigang/policies/ha_agent_policy.yaml"`
-- **Validation**: File must exist and be readable.
-
 ### `mail` Object (optional)
 
 Deliberately minimal -- kept to the four fields below so that adding a second mail-capable agent
@@ -295,79 +283,28 @@ selectable_secrets:
 - **Description**: List of Claude permission modes available in TUI.
 - **Example**: `["default", "acceptEdits", "bypassPermissions", "plan", "dontAsk"]`
 
-## Policy File Schema
+## No Per-Agent Policy Enforcement Layer
 
-Policy files are referenced by `policy_file` and stored separately.
+There is currently no per-agent policy enforcement layer. A `policy_file` field and an
+`/etc/freigang/policies/<agent>_policy.yaml` schema (MCP server allow-lists, a `secrets.allowed`
+list, a `filesystem.writable_paths` list, and proxy settings) existed in this doc and in deployed
+configs, but nothing in the codebase ever read or enforced them -- see
+[ADR-0003](adr/0003-pydantic-schema-and-policy-file-removal.md). They have been removed rather than
+kept as documentation shaped like a config file.
 
-### Location
-`/etc/freigang/policies/<agent>_policy.yaml`
+The real boundaries an agent operates within today are:
 
-### Schema
+- **The container**: what the image includes and what processes can run inside it.
+- **The mounts**: which host paths are bind-mounted into the container, and whether each is
+  read-only or read-write (see `start_container.sh`).
+- **The secrets actually passed**: only the secret files actually mounted or exported into the
+  container's environment are reachable by the agent, regardless of any `defaults.secrets` or
+  `resources.selectable_secrets` list in the agent config -- those lists only drive what the TUI
+  offers to enable, not what is enforced.
+- **The proxy allowlist**: whatever network egress rules the host-side proxy actually applies.
 
-```yaml
-version: number                     # Policy schema version (currently 1)
-agent_id: string                    # Must match agent config
-
-# MCP server policies
-mcp_servers:
-  <server_name>:
-    allowed: boolean                # Whether server is allowed
-    network_access: string          # Network access mode
-    filesystem_access: [string]     # Allowed filesystem paths
-
-# Secret policies
-secrets:
-  storage_path: string              # Where secrets are stored
-  allowed: [string]                 # List of allowed secret names
-
-# Network policies
-network:
-  proxy:
-    http_proxy: string              # HTTP proxy URL
-    https_proxy: string             # HTTPS proxy URL
-    no_proxy: [string]              # Domains to bypass proxy
-
-# Filesystem policies
-filesystem:
-  writable_paths: [string]          # List of writable paths
-```
-
-### Example Policy
-
-```yaml
-version: 1
-agent_id: ha_agent
-
-mcp_servers:
-  playwright:
-    allowed: true
-    network_access: inherit
-    filesystem_access:
-      - /workspace
-      - /tmp
-
-secrets:
-  storage_path: /home/ha_agent/.secrets
-  allowed:
-    - github_token
-    - ha_access_token
-    - mqtt_username
-    - mqtt_password
-
-network:
-  proxy:
-    http_proxy: http://host.containers.internal:8888
-    https_proxy: http://host.containers.internal:8888
-    no_proxy:
-      - api.anthropic.com
-      - claude.ai
-
-filesystem:
-  writable_paths:
-    - /workspace
-    - /sessions
-    - /tmp
-```
+A real enforcement layer (for example, a Cedar-based policy engine) is a separate,
+security-focused project and is out of scope here. This doc will be updated when one exists.
 
 ## Validation
 
@@ -378,9 +315,8 @@ Agent configurations should be validated before use. Basic validation includes:
 3. **Field Types**: Correct data types
 4. **User Exists**: `linux_user.username` is a valid system user
 5. **Home Directory**: `linux_user.home` exists
-6. **Policy File**: `policy_file` exists and is readable
-7. **Image Exists**: `container.image` is built (warning if not)
-8. **Network Exists**: `container.network` is created (warning if not)
+6. **Image Exists**: `container.image` is built (warning if not)
+7. **Network Exists**: `container.network` is created (warning if not)
 
 ## Environment Variables
 
@@ -401,7 +337,6 @@ When an agent config is loaded, these environment variables are set:
 - `DEFAULT_PERMISSION_MODE` - Default permission mode
 - `DEFAULT_BROWSER_MODE` - Default browser mode
 - `DEFAULT_VNC` - Default VNC setting
-- `POLICY_FILE` - Policy file path
 - `MAIL_ENABLED` - Whether the agent config has `mail.enabled: true` (`false` if `mail` is absent)
 - `MAIL_MAILDIR` - `mail.maildir` value (directory name under `AGENT_HOME`; default `mail`)
 - `MAIL_IMAP_HOST` - `mail.imap_host` value, informational

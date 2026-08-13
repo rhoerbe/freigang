@@ -216,13 +216,14 @@ export XDG_RUNTIME_DIR=/run/user/$(id -u ha_agent)
 
 ## Multi-Agent Configuration
 
-Freigang now supports multiple agents with YAML-based configuration. This allows running different agents with separate policies, repositories, and credentials.
+Freigang now supports multiple agents with YAML-based configuration. This allows running different agents with separate repositories and credentials. There is currently no per-agent policy
+enforcement layer -- see
+[Agent Configuration Schema](agent-config-schema.md#no-per-agent-policy-enforcement-layer).
 
 ### Configuration Files
 
 Agent configurations are stored in:
 - `/etc/freigang/agents.d/<agent_name>.yaml` - Agent definition
-- `/etc/freigang/policies/<agent_name>_policy.yaml` - Agent policy
 - `/etc/freigang/mcp-servers/manifest.json` - Available MCP servers
 
 ### Example: Adding a New Agent
@@ -232,23 +233,18 @@ Agent configurations are stored in:
 sudo nano /etc/freigang/agents.d/wiki_agent.yaml
 ```
 
-2. **Create policy file**:
-```bash
-sudo nano /etc/freigang/policies/wiki_agent_policy.yaml
-```
-
-3. **Create Linux user**:
+2. **Create Linux user**:
 ```bash
 sudo useradd -m -s /bin/bash wiki_agent
 sudo usermod -aG podman wiki_agent
 ```
 
-4. **Set up repository**:
+3. **Set up repository**:
 ```bash
 sudo -u wiki_agent git clone git@github.com:user/wiki.git /home/wiki_agent/workspace/wiki
 ```
 
-5. **Run the agent**:
+4. **Run the agent**:
 ```bash
 sudo -u wiki_agent /home/wiki_agent/start_container.sh --agent wiki_agent
 ```
