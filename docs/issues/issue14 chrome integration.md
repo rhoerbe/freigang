@@ -211,7 +211,10 @@ esac
 exec "$@"
 ```
 
-Note: VNC binds to localhost only. To connect remotely, use `podman exec` to establish a tunnel, or explicitly expose port 5900 for development/debugging.
+Note: `x11vnc` runs with `-nopw` (no password) inside the container. `start_container.sh`
+publishes the port as `127.0.0.1:5900:5900`, so it is reachable from the host only, not
+the network. To connect remotely, use `podman exec` or an SSH tunnel to the host — do not
+rebind to all interfaces (e.g. `-p 5900:5900`), since there is no VNC authentication.
 
 ### Integration Test
 
