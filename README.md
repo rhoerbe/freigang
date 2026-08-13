@@ -50,7 +50,6 @@ Other isolation mechanisms (virtual machines, bare metal) could be used but are 
 Freigang supports multiple agents with independent configurations:
 
 * **Agent Configuration**: YAML-based configuration files in `/etc/freigang/agents.d/` define per-agent settings
-* **Policy Files**: Separate policy files in `/etc/freigang/policies/` specify MCP server access, secrets, and network rules
 * **Agent Selection**: Interactive menu or `--agent` flag for explicit selection
 * **User Isolation**: Each agent runs as a dedicated Linux user for clear audit trails
 * **Repository Management**: Per-agent repositories with optional auto-sync on container startup
@@ -62,9 +61,6 @@ Freigang supports multiple agents with independent configurations:
 ├── agents.d/                   # Agent definitions
 │   ├── ha_agent.yaml
 │   └── wiki_agent.yaml
-├── policies/                   # Per-agent policies
-│   ├── ha_agent_policy.yaml
-│   └── wiki_agent_policy.yaml
 └── mcp-servers/
     └── manifest.json           # Available MCP servers
 ```
@@ -72,7 +68,8 @@ Freigang supports multiple agents with independent configurations:
 **Key Features**:
 - Backward compatible with legacy hardcoded configuration
 - No inference from current user - explicit selection required
-- Policy-based MCP server filtering (only allowed servers shown in TUI)
+- `resources.allowed_mcp_servers` in the agent config controls which servers the TUI offers (not an
+  enforcement layer -- see [Agent Configuration Schema](docs/agent-config-schema.md#no-per-agent-policy-enforcement-layer))
 - Separate secrets and permissions per agent
 - Optional git auto-sync for keeping workspaces current
 
